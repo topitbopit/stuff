@@ -1,2 +1,2 @@
 # stuff
-actual good and functional scripts ✅
+actually good scripts that are functional ✅
