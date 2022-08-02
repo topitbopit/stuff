@@ -1,6 +1,13 @@
 --- Drawing player radar
 --- Made by topit
-local scriptver = 'v1.0'
+local scriptver = 'v1.1'
+
+-- v1.1 changelog
+--+ Added username display when you hover over a player marker 
+--+ Players that leave now have their markers fade out instead of just disappear
+--* Fixed a few possible memleaks
+--* Fixed markers not unfilling when someone dies in specific situations
+
 
 --- Settings ---
 local existingSettings = _G.RadarSettings or {}
@@ -222,7 +229,6 @@ local playerExisting = {} -- Dictionary with player names as keys
 local playerManagers = {} -- Dictionary containing the player managers
 local playerCns = {} -- Connections for each manager
 
-
 do 
     local function removePlayer(player) 
         local thisName = player.Name
@@ -300,6 +306,12 @@ do
             thisManager.Character = Character
             thisManager.RootPart = RootPart
             thisManager.Humanoid = Humanoid 
+            
+            thisPlayerCns['chr-die'] = Humanoid.Died:Connect(function() 
+                if (thisManager.onDeath) then
+                    thisManager.onDeath()
+                end
+            end)
         end
         
         thisManager.Team = player.Team
@@ -328,7 +340,6 @@ local radarLines = {}
 local radarObjects = {}
 local radarPosition = newVec2(300, 250)
 
--- main background
 radarObjects.main = newDraw('Circle', {
     Color = RADAR_THEME.Background;
     Position = radarPosition; 
@@ -341,7 +352,6 @@ radarObjects.main = newDraw('Circle', {
     ZIndex = 300;
 })
 
--- outline
 radarObjects.outline = newDraw('Circle', {
     Color = RADAR_THEME.Outline;
     Position = radarPosition; 
@@ -355,7 +365,6 @@ radarObjects.outline = newDraw('Circle', {
     ZIndex = 299;
 })
 
--- drag handle
 radarObjects.dragHandle = newDraw('Circle', {
     Color = RADAR_THEME.DragHandle;
     Position = radarPosition; 
@@ -457,8 +466,7 @@ else
 end
 
 
---- Extra functions
-
+--- Other functions
 local function killScript() 
     for _, con in pairs(scriptCns) do 
         con:Disconnect()
@@ -564,7 +572,7 @@ local function setRadarPosition(newPosition)
     end
 end
 
--- Input and drag handling
+--- Input and drag handling
 do
     local radarDragging = false
     local radarHovering = false
@@ -685,11 +693,14 @@ end
 
 
 --- Player marker setup
+local hoverTexts = {}
 local playerMarks = {} do 
-    local function initMark(thisName) 
+    local function initMark(thisPlayer)
+        local thisName = thisPlayer.Name 
         local thisManager = playerManagers[thisName]
         
         local mark
+        local text
         
         if (USE_QUADS) then 
             mark = Drawing.new('Quad')
@@ -707,16 +718,28 @@ local playerMarks = {} do
             mark.ZIndex = 302
         end
         
+        text = Drawing.new('Text')
+        text.Center = true
+        text.Color = Color3.fromRGB(255, 255, 255)
+        text.Font = 1
+        text.Outline = true
+        text.Size = 15
+        text.Text = thisPlayer.DisplayName or thisName
+        text.Visible = false
+        text.ZIndex = 305
+        
         if (DISPLAY_TEAM_COLORS) then
             mark.Color = thisManager.Player.TeamColor.Color
         else
             mark.Color = RADAR_THEME.Generic_Marker
         end
         
-        
         tableInsert(drawObjects, mark)
+        tableInsert(drawObjects, text)
         
+        hoverTexts[thisName] = text 
         playerMarks[thisName] = mark
+        
         thisManager.onDeath = function()
             mark.Filled = false
         end
@@ -725,22 +748,75 @@ local playerMarks = {} do
         end
         thisManager.onLeave = function()
             tableRemove(drawObjects, tableFind(drawObjects, mark))
-            mark:Remove()
+            tableRemove(drawObjects, tableFind(drawObjects, text))
+            task.spawn(function() 
+                drawingTween(mark, 'Transparency', 0, 1)
+                task.wait(1)
+                mark:Remove()
+            end)
+            text:Remove()
+            
+            playerMarks[thisName] = nil
+            hoverTexts[thisName] = nil
         end
     end
     
     for _, thisName in ipairs(playerNames) do
-        initMark(thisName)
+        initMark(playerService[thisName])
     end
     
     scriptCns.addMarks = playerService.PlayerAdded:Connect(function(player) 
         task.wait()
-        initMark(player.Name)
+        initMark(player)
     end)
 end
 
---- Main radar loop
 
+-- Hover display
+do 
+    local visiblePlrs = {}
+    local visibleCount = 0
+    local lastCheckTime = 0
+    
+    scriptCns.inputChanged = inputService.InputChanged:Connect(function(io) 
+        local nowTime = tick()
+        if (nowTime - lastCheckTime > 0.05 and io.UserInputType.Name == 'MouseMovement') then
+            lastCheckTime = nowTime
+            local mousePos = inputService:GetMouseLocation()
+            
+            if ((mousePos - radarPosition).Magnitude < RADAR_RADIUS) then
+                for _, thisName in ipairs(playerNames) do 
+                    local thisMark = playerMarks[thisName]
+                    local markPos = thisMark.PointC
+                    
+                    if ((mousePos - markPos).Magnitude < 15) then
+                        if (visiblePlrs[thisName] == nil) then 
+                            hoverTexts[thisName].Visible = true
+                            visiblePlrs[thisName] = true
+                            visibleCount += 1 
+                        end
+                    elseif (visiblePlrs[thisName]) then
+                        hoverTexts[thisName].Visible = false
+                        visiblePlrs[thisName] = nil
+                        visibleCount -= 1 
+                    end
+                end
+            else
+                if (visibleCount > 0) then
+                    for thisName in pairs(visiblePlrs) do 
+                        hoverTexts[thisName].Visible = false
+                        visiblePlrs[thisName] = nil
+                        visibleCount -= 1 
+                    end
+                end
+            end
+        end
+    end)
+end
+
+
+
+--- Main radar loop
 
 -- Coordinate conversion functions
 local function cartToPolar(x, y) 
@@ -755,6 +831,8 @@ do
     
     local hOffset = newVec2(RADAR_RADIUS, 0) -- Horizontal offset
     local vOffset = newVec2(0, RADAR_RADIUS) -- Vertical offset
+    
+    local textOffset = newVec2(0, 15)
     
     local rad90 = math.rad(90)
     local rad180 = math.rad(180)
@@ -895,6 +973,8 @@ do
                         thisMark.Position = finalPos
                         thisMark.Radius = 3 * markerScale
                     end
+                    
+                    hoverTexts[thisName].Position = finalPos + textOffset
                 end
             end
         end
