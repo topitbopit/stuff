@@ -1,4 +1,4 @@
--- Trusty GUI v1.0.2
+-- Trusty GUI v1.0.3
 -- Made by topit 
 
 -- ideas:
@@ -20,7 +20,7 @@ local vimService = game:GetService('VirtualInputManager')
 
 local repStorage = game:GetService('ReplicatedStorage')
 
-local GUIVER = 'v1.0.2'
+local GUIVER = 'v1.0.3'
 
 -- // Variables that do stuff 
 local localPlayer = playerService.LocalPlayer
@@ -796,149 +796,6 @@ do
             })
         end
     end
-
-    --[[local tab = window:Tab({
-        Text = 'Automation',
-        Tooltip = 'Some nice automation, like auto mining, auto meteor, and more'
-    })
-    do 
-        local section = tab:Section({
-            Text = 'Spawners',
-            Side = 'Left'
-        })
-        do 
-        
-            --[[ auto trusty
-            do 
-                local getting = false
-                
-                section:Button({
-                    Text = 'Auto trusty',
-                    Tooltip = 'Buys the stuff required and spawns in a trusty pickaxe',
-                    Callback = function() 
-                        if ( playerCash < 260 ) then
-                            lib:Notification({
-                                Title = 'Failed',
-                                Description = 'Not enough cash!',
-                                Timeout = 3 
-                            }) 
-                            
-                            return
-                        end
-                        
-                        if ( getting == true ) then
-                            lib:Notification({
-                                Title = 'Already running!',
-                                Description = 'Wait for auto trusty to finish!',
-                                Timeout = 3 
-                            }) 
-                            
-                            return
-                        end
-                        
-                        local plrPurchase = CFrame.new(134.5, 88.7, 1093.6) -- player tp after purchase
-                        local pickPurchase = CFrame.new(133.3, 88.7, 1096.3) -- pick tp after purchase
-                        local pickFinal = CFrame.new(144.4, 87.1, 1106.7) -- pick tp when finished
-                        local plrFinal = CFrame.new(139.0, 88.7, 1095.8) -- player tp when finished
-                        
-                        getting = true 
-                        
-                        
-                        -- stone
-                        local stone = utilfuncs.getStoreItem('Boxed Stone Pickaxe')
-                        if ( not stone ) then
-                            getting = false
-                            lib:Notification({
-                                Title = 'Failed',
-                                Description = 'Couldn\'t find a stone pickaxe - wait a bit then retry',
-                                Timeout = 3 
-                            }) 
-                            
-                            return
-                        end
-                        
-                        local boughtStone = utilfuncs.buyItem(stone) 
-                        if ( boughtStone ) then
-                            task.wait(2.5)
-                            utilfuncs.tryTeleport(plrPurchase)
-                            boughtStone:SetPrimaryPartCFrame(pickPurchase)
-                            task.wait(0.4)
-                        else
-                            getting = false 
-                            lib:Notification({
-                                Title = 'Failed',
-                                Description = 'Couldn\'t buy a stone pickaxe for some reason',
-                                Timeout = 3 
-                            }) 
-                            return 
-                        end
-                        
-                        -- rusty
-                        local rusty = utilfuncs.getStoreItem('Boxed Rusty Pickaxe')
-                        if ( not rusty ) then
-                            getting = false
-                            lib:Notification({
-                                Title = 'Failed',
-                                Description = 'Couldn\'t find a rusty pickaxe - wait a bit then retry',
-                                Timeout = 3 
-                            }) 
-                            
-                            return
-                        end
-                        local boughtRusty = utilfuncs.buyItem(rusty) 
-                        if ( boughtRusty ) then
-                            task.wait(2.5)
-                            utilfuncs.tryTeleport(plrPurchase)
-                            boughtRusty:SetPrimaryPartCFrame(pickPurchase)
-                            task.wait(0.4)
-                        else
-                            getting = false 
-                            lib:Notification({
-                                Title = 'Failed',
-                                Description = 'Couldn\'t buy a rusty pickaxe for some reason',
-                                Timeout = 3 
-                            }) 
-                            return 
-                        end
-                        
-                        do getting = false return end 
-                        
-                        -- iron 
-                        local iron = utilfuncs.getStoreItem('Boxed Iron Pickaxe')
-                        if ( not iron ) then
-                            getting = false
-                            lib:Notification({
-                                Title = 'Failed',
-                                Description = 'Couldn\'t find an iron pickaxe - wait a bit then retry',
-                                Timeout = 3 
-                            }) 
-                            
-                            return
-                        end
-                        
-                        local boughtIron = utilfuncs.buyItem(iron) 
-                        if ( boughtIron ) then
-                            utilfuncs.tryTeleport(plrPurchase)
-                            boughtIron:SetPrimaryPartCFrame(pickPurchase)
-                            task.wait(0.05)
-                        else
-                            getting = false 
-                            lib:Notification({
-                                Title = 'Failed',
-                                Description = 'Couldn\'t buy an iron pickaxe for some reason',
-                                Timeout = 3 
-                            }) 
-                            return 
-                        end
-                        
-                        
-                        getting = false 
-                    end
-                })
-            end]
-        end
-    end]]
-
     
     local tab = window:Tab({
         Text = 'Tweaks',
