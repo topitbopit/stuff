@@ -1,10 +1,11 @@
--- Trusty GUI v1.0.1
+-- Trusty GUI v1.0.2
 -- Made by topit 
 
 -- ideas:
 --[[
 - auto trusty and meteor
 ]]
+
 
 if ( game.PlaceId ~= 8726743209 ) then
     return messagebox('Wrong game!', 'Oopsies', 0)
@@ -19,7 +20,7 @@ local vimService = game:GetService('VirtualInputManager')
 
 local repStorage = game:GetService('ReplicatedStorage')
 
-local GUIVER = 'v1.0.1'
+local GUIVER = 'v1.0.2'
 
 -- // Variables that do stuff 
 local localPlayer = playerService.LocalPlayer
@@ -27,17 +28,14 @@ local localChar = localPlayer.Character
 local localRoot = localChar and localChar:FindFirstChild('HumanoidRootPart')
 local localHum = localChar and localChar:FindFirstChild('Humanoid')
 
-if ( localPlayer.Name:match('tryruben') ) then
-    messagebox('You have been blacklisted!', 'error', 0)
-    while true do end     
-end
-
 local localMouse = localPlayer:GetMouse()
 local localCam = workspace.CurrentCamera
 
 local remotes = {
     clientevent = repStorage.Events.ClientEvent;
-    sell = workspace.Map.Sellary.Keeper.IPart.Interact;
+    sellarySell = workspace.Map.Sellary.Keeper.IPart.Interact;
+    grab = repStorage.Events.Grab;
+    ungrab = repStorage.Events.Ungrab;
 }
 
 local grabbable = workspace.Grabable
@@ -68,17 +66,6 @@ params.FilterType = Enum.RaycastFilterType.Blacklist
 params.FilterDescendantsInstances = { ignore, localChar }
 
 local utilfuncs = {} 
-function utilfuncs.tryTeleport( destination: CFrame ) 
-    if ( playerVehicle ) then
-        playerVehicle:SetPrimaryPartCFrame(destination + Vector3.new(0, 1, 0))
-        playerVehicle.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
-    else
-        localRoot.CFrame = destination
-        --[[if ( localHum:GetState().Name == 'Ragdoll' ) then
-            localHum:ChangeState('GettingUp')
-        end]]
-    end
-end
 
 function utilfuncs.getClosestRegister( building: Instance ) 
     local localPos = localRoot.Position
@@ -217,6 +204,43 @@ function utilfuncs.getHotkey( acceptMouse: boolean )
     return finalKey, keyType
 end
 
+
+-- teleport related 
+do
+    function utilfuncs.tryTeleport( destination: CFrame ) 
+        if ( playerVehicle ) then
+            playerVehicle:SetPrimaryPartCFrame(destination + Vector3.new(0, 1, 0))
+            playerVehicle.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
+        else
+            localRoot.CFrame = destination
+        end
+    end
+
+
+    local freezeDest
+    function utilfuncs.EnableFreeze() 
+        localHum:SetStateEnabled('FallingDown', false)
+        localHum:SetStateEnabled('Ragdoll', false)
+        
+        signals.FreezeCn = runService.Heartbeat:Connect(function() 
+            localRoot.CFrame = freezeDest
+        end)
+    end
+
+    function utilfuncs.DisableFreeze() 
+        if ( signals.FreezeCn ) then
+            signals.FreezeCn:Disconnect()  
+        end
+        
+        localHum:SetStateEnabled('FallingDown', true)
+        localHum:SetStateEnabled('Ragdoll', true)
+    end
+
+    function utilfuncs.SetFreezePos( Position: CFrame ) -- surely not confusing 
+        freezeDest = Position 
+    end
+end
+
 -- Update the stuff for the stuff  
 signals['*PlotUpd'] = playerPlotPointer.Changed:Connect(function( value )
     playerPlot = value
@@ -290,8 +314,8 @@ do
                 local inputCn 
                 
                 section:Toggle({
-                    Text = 'Click buy',
-                    Tooltip = 'Lets you click on a store item to instantly buy and bring it',
+                    Text = 'Click counter',
+                    Tooltip = 'Lets you click on a store item to bring it to the closest store counter',
                     Callback = function( ns ) 
                         if ( ns ) then
                             inputCn = localMouse.Button1Down:Connect(function() 
@@ -303,12 +327,35 @@ do
                                     
                                     if ( item:FindFirstChild('Link') and item:FindFirstChild('Shop') ) then
                                         local pos = localRoot.CFrame 
-                                        local boughtItem = utilfuncs.buyItem(item) 
-                                        if ( boughtItem == item ) then
-                                            item:SetPrimaryPartCFrame(bringLocation)
+                                        
+                                        local shop = item.Shop.Value.Parent.Parent 
+                                        local register = utilfuncs.getClosestRegister(shop)
+                                        
+                                        if ( register ) then
+                                            local counter = register.Counter.Counter 
+                                            local buy = register.Worker.IPart.Interact
+                                            
+                                            local partCFrame = part.CFrame
+                                            utilfuncs.tryTeleport(partCFrame)
+                                            task.wait(0.10)
+                                            
+                                            remotes.grab:InvokeServer(part, {})
+                                            task.wait(0.03)
+                                            item:SetPrimaryPartCFrame(counter.CFrame + Vector3.new(0, 3, 0))
+                                            task.wait(0.03)
+                                            remotes.ungrab:FireServer(part)
+                                            
+                                            task.wait(0.03)
+                                            utilfuncs.tryTeleport(pos)
                                         end
-                                        task.wait(delays.item_own)
-                                        localRoot.CFrame = pos 
+                                        
+                                        --[[local pos = localRoot.CFrame 
+                                        local boughtItem = utilfuncs.buyItem(item) ]]
+                                        --if ( boughtItem == item ) then
+                                        
+                                        --end
+                                        --[[task.wait(delays.item_own)
+                                        localRoot.CFrame = pos ]]
                                     end
                                 end
                             end)
@@ -682,7 +729,7 @@ do
                     Callback = function() 
                         utilfuncs.tryTeleport(CFrame.new(-456.7, 5.8, -67.8))
                         task.wait(delays.interact_after_teleport)
-                        remotes.sell:FireServer()
+                        remotes.sellarySell:FireServer()
                         
                         utilfuncs.clickGui(utilfuncs.getYes())
                     end
