@@ -1,7 +1,10 @@
 --- Drawing Player Radar
 --- Made by topit
 --- Nov 2 2022
-local scriptver = 'v1.2'
+local scriptver = 'v1.2.1'
+
+-- v1.2.1 changelog 
+--+ Markers now get properly updated when someone switches teams 
 
 -- v1.2 changelog 
 --+ Cleaned up a bunch of stuff
@@ -283,6 +286,7 @@ do
         thisManager.onLeave = nil
         thisManager.onRemoval = nil
         thisManager.onRespawn = nil
+        thisManager.onTeamChange = nil 
         
         thisManager.Player = nil
         
@@ -336,6 +340,10 @@ do
         
         thisPlayerCns['team'] = thisPlayer:GetPropertyChangedSignal('Team'):Connect(function()  -- This handles team changing, self explanatory
             thisManager.Team = thisPlayer.Team
+            
+            if ( thisManager.onTeamChange ) then
+                thisManager.onTeamChange(thisManager.Team)
+            end
         end)
         
         -- Check for an existing character
@@ -597,10 +605,11 @@ local function killScript()
         end
         
         -- just in case 
+        playerManagers.onDeath = nil 
         playerManagers.onLeave = nil 
         playerManagers.onRespawn = nil 
-        playerManagers.onDeath = nil 
         playerManagers.onRemoval = nil 
+        playerManagers.onTeamChange = nil 
 
         playerManagers[name] = nil 
     end
@@ -882,6 +891,12 @@ local playerMarks = {} do
             text:Remove()
             
             playerMarks[thisName] = nil
+        end
+        
+        if ( DISPLAY_TEAM_COLORS ) then 
+            thisManager.onTeamChange = function(team) 
+                mark.Color = team.TeamColor.Color
+            end
         end
     end
     
