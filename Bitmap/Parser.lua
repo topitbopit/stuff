@@ -1,4 +1,4 @@
--- BMP Parser, version 0.1.0
+-- BMP Parser, version 0.1.1
 -- Written by topit
 -- Only supports decoding rn
 
@@ -604,7 +604,7 @@ local Bitmap = {} do
     end
 
     function Bitmap:GetResolution() 
-        return Vector2.new(self.BitmapWidth, self.BitmapHeight)
+        return Vector2.new(self.HeaderInfo.BitmapWidth, self.HeaderInfo.BitmapHeight)
     end
     
     function Bitmap:Destroy() 
