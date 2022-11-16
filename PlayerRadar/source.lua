@@ -1,7 +1,23 @@
 --- Drawing Player Radar
 --- Made by topit
---- Nov 2 2022
-local scriptver = 'v1.2.1'
+--- Nov 15 2022
+local scriptver = 'v1.3.0'
+
+-- v1.3.0 changelog
+--! Changed how scaling works a bit, you may need to re-config your old values!
+--* Fixed how players that are dead when the radar is executed show up as alive
+--* Fixed issue where players without teams could break the team color setting
+--* Fixed issues with players not being loaded properly 
+--* May have fixed some possible issues with the dot display
+--* Renamed "MARKER_SCALEMIN" and "MARKER_SCALEMAX" to "MARKER_SCALE_MIN" and "MARKER_SCALE_MAX"
+--+ Added the "Friend_Marker" theme entry 
+--+ Added the "DISPLAY_FRIEND_COLORS" setting - self explanatory
+--+ Added the "RGB_MODE" setting - self explanatory
+--+ Added the "USE_FALLBACK" setting, which lets the radar work on streamingenabled games
+--+ Added the "VISIBLITY_CHECK" setting, which makes non-visible (i.e. players behind walls) markers become dimmed
+--+ Adding / removing a friend now changes their marker color in real time  
+--+ Markers now have antialiasing (originally was gonna add black outlines / shadows, but they looked awful)
+--+ The hover display is now way more smooth 
 
 -- v1.2.1 changelog 
 --+ Markers now get properly updated when someone switches teams 
@@ -31,74 +47,113 @@ end
 --- Settings ---
 local existingSettings = _G.RadarSettings or {}
 local settings = {
-    -- Radar settings
-    RADAR_LINES = true; -- Displays distance rings
+    --- Radar settings
+    -- lines
+    RADAR_LINES = true; -- Displays distance rings + cardinal lines 
+    RADAR_LINE_DISTANCE = 50; -- The distance between each distance ring
+    -- scale
     RADAR_SCALE = 1; -- Controls how "zoomed in" the radar display is 
     RADAR_RADIUS = 125; -- The size of the radar itself
-    RADAR_LINE_DISTANCE = 50; -- The distance between each line
+    -- rotation
     RADAR_ROTATION = true; -- Toggles radar rotation. Looks kinda trippy when disabled
-    SMOOTH_ROT = true; -- Rotates the radar smoothly
-    SMOOTH_ROT_AMNT = 20; -- Lower number is smoother, higher number is snappier 
+    SMOOTH_ROT = true; -- Toggles smooth radar rotation
+    SMOOTH_ROT_AMNT = 30; -- Lower number is smoother, higher number is snappier 
+    -- misc
     CARDINAL_DISPLAY = true; -- Displays each cardinal direction (NSWE) around the radar 
-
-    -- Marker settings
-    USE_QUADS = true; -- Displays radar markers as arrows instead of dots 
-    OFFSCREEN_TRANSPARENCY = 0.3; -- Transparency of offscreen markers
-    DISPLAY_TEAM_COLORS = true; -- Sets the radar markers' color to their player's team color
+    
+    --- Marker settings
+    -- display 
     DISPLAY_OFFSCREEN = true; -- Leaves offscreen markers visible
     DISPLAY_TEAMMATES = true; -- Shows your teammates' markers
-    MARKER_SCALEMIN = 0.75; -- Minimium scale radar markers can be. Marker falloff bypasses this limit!
-    MARKER_SCALEMAX = 1.75; -- Maximum scale radar markers can be. Marker falloff bypasses this limit!
-    MARKER_FALLOFF = false; -- Affects the markers' scale depending on how far away the player is
-    MARKER_FALLOFF_AMNT = 500; -- How close someone has to be for falloff to start affecting them 
-
-    -- Theme
+    DISPLAY_TEAM_COLORS = false; -- Sets the radar markers' color to their player's team color
+    DISPLAY_FRIEND_COLORS = true; -- Sets your friends' markers' color to the set friend color - overwrites team colors 
+    -- scale 
+    MARKER_SCALE_BASE = 1.25; -- Base scale that gets applied to markers
+    MARKER_SCALE_MAX = 1.25; -- The largest scale that a marker can be.
+    MARKER_SCALE_MIN = 0.75; -- The smallest scale that a marker can be.
+    -- falloff 
+    MARKER_FALLOFF = true; -- Affects the markers' scale depending on how far away the player is - bypasses SCALE_MIN and SCALE_MAX
+    MARKER_FALLOFF_AMNT = 125; -- How close someone has to be for falloff to start affecting them 
+    -- misc 
+    OFFSCREEN_TRANSPARENCY = 0.3; -- Transparency of offscreen markers
+    USE_FALLBACK = false; -- Enables an emergency "fallback mode" for StreamingEnabled games
+    USE_QUADS = true; -- Displays radar markers as arrows instead of dots 
+    VISIBLITY_CHECK = false; -- Makes markers that are not visible slightly transparent 
+    RGB_MODE = false; -- Uses an RGB mode that ignores team colors. If DISPLAY_FRIEND_COLORS is enabled, they take priority over RGB.
+    
+    --- Theme
     RADAR_THEME = {
+        -- radar
         Outline = Color3.fromRGB(35, 35, 45); -- Radar outline
         Background = Color3.fromRGB(25, 25, 35); -- Radar background
         DragHandle = Color3.fromRGB(50, 50, 255); -- Drag handle 
         
+        -- lines
         Cardinal_Lines = Color3.fromRGB(110, 110, 120); -- Color of the horizontal and vertical lines
         Distance_Lines = Color3.fromRGB(65, 65, 75); -- Color of the distance rings
         
+        -- markers
         Generic_Marker = Color3.fromRGB(255, 25, 115); -- Color of a player marker without a team
         Local_Marker = Color3.fromRGB(115, 25, 255); -- Color of your marker, regardless of team
+        Team_Marker = Color3.fromRGB(25, 115, 255); -- Color of your teammates markers. Used when DISPLAY_TEAM_COLORS is disabled
+        Friend_Marker = Color3.fromRGB(25, 255, 115); -- Color of your friends markers. Used when DISPLAY_FRIEND_COLORS is enabled 
     };
 }
 
+-- fill in missing settings 
 for k, v in pairs(existingSettings) do 
     if ( v ~= nil ) then
         settings[k] = v 
     end
 end
 
--- localize each setting (settings aren't meant to be changed during runtime)
+--- Radar settings 
+-- lines 
 local RADAR_LINES = settings.RADAR_LINES
+local RADAR_LINE_DISTANCE = settings.RADAR_LINE_DISTANCE
+-- scale
 local RADAR_SCALE = settings.RADAR_SCALE
 local RADAR_RADIUS = settings.RADAR_RADIUS
-local RADAR_LINE_DISTANCE = settings.RADAR_LINE_DISTANCE
+-- rotation
 local RADAR_ROTATION = settings.RADAR_ROTATION
 local SMOOTH_ROT = settings.SMOOTH_ROT
 local SMOOTH_ROT_AMNT = settings.SMOOTH_ROT_AMNT
+-- misc
 local CARDINAL_DISPLAY = settings.CARDINAL_DISPLAY
 
-local USE_QUADS = settings.USE_QUADS
-local OFFSCREEN_TRANSPARENCY = settings.OFFSCREEN_TRANSPARENCY
-local DISPLAY_TEAM_COLORS = settings.DISPLAY_TEAM_COLORS 
+--- Marker settings
+-- display
 local DISPLAY_OFFSCREEN = settings.DISPLAY_OFFSCREEN
 local DISPLAY_TEAMMATES = settings.DISPLAY_TEAMMATES
-local MARKER_SCALEMIN = settings.MARKER_SCALEMIN
-local MARKER_SCALEMAX = settings.MARKER_SCALEMAX
-local MARKER_FALLOFF = settings.MARKER_FALLOFF 
+local DISPLAY_TEAM_COLORS = settings.DISPLAY_TEAM_COLORS
+local DISPLAY_FRIEND_COLORS = settings.DISPLAY_FRIEND_COLORS
+-- scale
+local MARKER_SCALE_BASE = settings.MARKER_SCALE_BASE
+local MARKER_SCALE_MAX = settings.MARKER_SCALE_MAX
+local MARKER_SCALE_MIN = settings.MARKER_SCALE_MIN
+-- falloff
+local MARKER_FALLOFF = settings.MARKER_FALLOFF
 local MARKER_FALLOFF_AMNT = settings.MARKER_FALLOFF_AMNT
+-- misc 
+local OFFSCREEN_TRANSPARENCY = settings.OFFSCREEN_TRANSPARENCY
+local RGB_MODE = settings.RGB_MODE
+local USE_FALLBACK = settings.USE_FALLBACK
+local USE_QUADS = settings.USE_QUADS
+local VISIBLITY_CHECK = settings.VISIBLITY_CHECK
 
+if ( RGB_MODE and DISPLAY_TEAM_COLORS ) then
+    DISPLAY_TEAM_COLORS = false 
+end
+    
+
+--- Theme 
 local RADAR_THEME = settings.RADAR_THEME 
-
 
 --- Services ---
 local inputService = game:GetService('UserInputService')
-local runService = game:GetService('RunService')
 local playerService = game:GetService('Players')
+local runService = game:GetService('RunService')
+local starterGui = game:GetService('StarterGui')
 
 --- Localization ---
 local newV2 = Vector2.new
@@ -112,7 +167,7 @@ local mathExp = math.exp
 local scriptCns = {}
 
 --- Other variables
-local markerScale = math.clamp(RADAR_SCALE, MARKER_SCALEMIN, MARKER_SCALEMAX)
+local markerScale = math.clamp(RADAR_SCALE, MARKER_SCALE_MIN, MARKER_SCALE_MAX) * MARKER_SCALE_BASE
 local scaleVec = newV2(markerScale, markerScale)
 
 local quadPointA = newV2(0, 5)   * scaleVec
@@ -137,7 +192,7 @@ end
 
 -- Drawing tween function 
 local drawingTween do -- obj property dest time 
-    local function numLerp(a, b, c) 
+    local function numLerp(a, b, c) -- skidded from wikipedia (😱😱)
         return (1 - c) * a + c * b
     end
     
@@ -211,7 +266,7 @@ do
         notif.Text = 'Games with custom character systems\naren\'t supported. Sorry!'
         notif.Transparency = 0
         notif.Visible = true
-
+        notif.ZIndex = 50
         
         drawingTween(notif, 'Transparency', 1, 0.25)
         drawingTween(notif, 'Position', newV2(clientCamera.ViewportSize.X / 2, 150), 0.25)
@@ -235,23 +290,24 @@ do
         notif.Outline = true
         notif.Position = newV2(clientCamera.ViewportSize.X / 2, 200)
         notif.Size = 22
-        notif.Text = ('Loaded Drawing Radar %s\n\nControls:\n[-]: zoom out     [+]: zoom in     [End]: exit script'):format(scriptver)
+        notif.Text = ('Loaded Drawing Radar %s\n\nControls:\n[-]: zoom out     [+]: zoom in     [End]: exit script'):format(scriptver) -- [Home]: toggle radar 
         notif.Transparency = 0
         notif.Visible = true
+        notif.ZIndex = 500
 
         task.spawn(function()
-            task.wait(1)
+            task.wait(0.5)
             
             drawingTween(notif, 'Transparency', 1, 0.25)
             drawingTween(notif, 'Position', newV2(clientCamera.ViewportSize.X / 2, 150), 0.25)
-            task.wait(8)
+            task.wait(5)
             
             drawingTween(notif, 'Position', newV2(clientCamera.ViewportSize.X / 2, 200), 0.25)
             drawingTween(notif, 'Transparency', 0, 0.25)
-            task.wait(1)
+            task.wait(0.5)
             
             if ( workspace.StreamingEnabled ) then
-                notif.Text = 'It looks like this game uses StreamingEnabled, which may mess with the radar!\nSorry if it doesn\'t work!'
+                notif.Text = 'It looks like this game uses StreamingEnabled, which messes with the radar.\nFallback mode is now enabled.'
                 drawingTween(notif, 'Transparency', 1, 0.25)
                 drawingTween(notif, 'Position', newV2(clientCamera.ViewportSize.X / 2, 150), 0.25)
                 task.wait(5)
@@ -267,11 +323,22 @@ do
 end
 
 --- Player managers --- 
+if ( workspace.StreamingEnabled ) then
+    USE_FALLBACK = true
+end
+
 local playerManagers = {}
 do 
     local function removePlayer(player) 
         local thisName = player.Name
         local thisManager = playerManagers[thisName]
+
+        -- had an error randomly happen where there was no manager made for someone before they were removed
+         -- definitely not getting a 0.000001% chance of some retard joining then leaving a microsecond later
+         -- so now there's this check for some random race condition that happens every 8 billion years 
+        if ( not thisManager ) then
+            return '?????'
+        end
         local thisPlayerCns = thisManager.Cns
                 
         if ( thisManager.onLeave ) then 
@@ -295,6 +362,7 @@ do
     
     local function readyPlayer(thisPlayer) 
         local thisName = thisPlayer.Name
+
         local thisManager = {}
         local thisPlayerCns = {}
         
@@ -306,13 +374,18 @@ do
 
         -- Setup connections
         thisPlayerCns['chr-add'] = thisPlayer.CharacterAdded:Connect(function(newChar) -- This handles when a player respawns
-            -- Get some important instances 
+            if ( USE_FALLBACK ) then
+                thisManager.Character = newChar 
+                return  
+            end
+            
+            -- Get the new instances 
             local RootPart = newChar:WaitForChild('HumanoidRootPart')
             local Humanoid = newChar:WaitForChild('Humanoid')
             
             -- Call onRespawn
             if ( thisManager.onRespawn ) then
-                thisManager.onRespawn(newChar, RootPart, Humanoid)
+                thisManager.onRespawn()
             end
             -- Update manager values 
             thisManager.Character = newChar
@@ -327,6 +400,11 @@ do
         end)
 
         thisPlayerCns['chr-remove'] = thisPlayer.CharacterRemoving:Connect(function() -- This handles when a player's character gets removed 
+            if ( USE_FALLBACK ) then
+                thisManager.Character = nil 
+                return  
+            end
+            
             -- Call onRemoval
             if ( thisManager.onRemoval ) then
                 thisManager.onRemoval()
@@ -370,6 +448,7 @@ do
         thisManager.Player = thisPlayer
         thisManager.Name = thisName 
         thisManager.DisplayName = thisPlayer.DisplayName  
+        thisManager.Friended = clientPlayer:IsFriendsWith(thisPlayer.UserId)
         
         -- Finalize
         thisManager.Cns = thisPlayerCns 
@@ -443,7 +522,7 @@ radarObjects.zoomText = newDrawObj('Text', {
     Size = 20;
     Transparency = 0;
     Visible = true;
-    ZIndex = 305;
+    ZIndex = 306;
 })
 
 radarObjects.hoverText = newDrawObj('Text', {
@@ -451,39 +530,47 @@ radarObjects.hoverText = newDrawObj('Text', {
     Color = Color3.fromRGB(255, 255, 255);
     Font = Drawing.Fonts.UI;
     Outline = true;
+    Position = radarPosition;
     Size = 16;
     Transparency = 1;
     Visible = true;
-    ZIndex = 305;
+    ZIndex = 306;
 })
 
 -- center marker
 if ( USE_QUADS ) then 
-    radarObjects.centerMark = newDrawObj('Quad', {
+    radarObjects.localMark = newDrawObj('Quad', {
         Color = RADAR_THEME.Local_Marker;
-        PointA = radarPosition + quadPointA;
-        PointB = radarPosition + quadPointB;
-        PointC = radarPosition + quadPointC;
-        PointD = radarPosition + quadPointD;
-        
         Filled = true;
-        Visible = true;
-        
-        ZIndex = 303;
         Thickness = 2;
+        Visible = true;
+        ZIndex = 305;
+    })
+    
+    radarObjects.localMarkStroke = newDrawObj('Quad', {
+        Color = RADAR_THEME.Local_Marker;
+        Filled = false;
+        Thickness = 2;
+        Visible = true;
+        ZIndex = 304;
     })
 else
-    radarObjects.centerMark = newDrawObj('Circle', {
+    radarObjects.localMark = newDrawObj('Circle', {
         Color = RADAR_THEME.Local_Marker;
-        Position = radarPosition; 
-        
         Filled = true;
-        Visible = true;
-        
         NumSides = 20;
-        Radius = 3 * markerScale;
         Thickness = 2;
-        ZIndex = 303;
+        Visible = true;
+        ZIndex = 305;
+    })
+    
+    radarObjects.localMarkStroke = newDrawObj('Circle', {
+        Color = RADAR_THEME.Local_Marker;
+        Filled = false;
+        NumSides = 20;
+        Thickness = 1;
+        Visible = true;
+        ZIndex = 304;
     })
 end
 
@@ -585,7 +672,7 @@ if ( CARDINAL_DISPLAY ) then
     })
 end
 
---- Other functions
+--- Other functions ---
 local destroying = false 
 local function killScript() 
     if ( destroying ) then
@@ -605,11 +692,11 @@ local function killScript()
         end
         
         -- just in case 
-        playerManagers.onDeath = nil 
-        playerManagers.onLeave = nil 
-        playerManagers.onRespawn = nil 
-        playerManagers.onRemoval = nil 
-        playerManagers.onTeamChange = nil 
+        manager.onDeath = nil 
+        manager.onLeave = nil 
+        manager.onRespawn = nil 
+        manager.onRemoval = nil 
+        manager.onTeamChange = nil 
 
         playerManagers[name] = nil 
     end
@@ -626,13 +713,13 @@ local function killScript()
     
     for _, obj in ipairs(drawObjects) do 
         obj:Remove()
-        _G.RadarKill = nil 
     end
+    _G.RadarKill = nil 
     drawObjects = nil
 end
 
 local function setRadarScale()   
-    markerScale = math.clamp(RADAR_SCALE, MARKER_SCALEMIN, MARKER_SCALEMAX)
+    markerScale = math.clamp(RADAR_SCALE, MARKER_SCALE_MIN, MARKER_SCALE_MAX) * MARKER_SCALE_BASE
     
     if ( RADAR_LINES ) then
         -- Calculate how many radar lines can fit at this scale 
@@ -682,7 +769,8 @@ local function setRadarScale()
         quadPointC = newV2(0, -3)  * scaleVec
         quadPointD = newV2(-4, -5) * scaleVec
     else
-        radarObjects.centerMark.Radius = 3 * markerScale
+        radarObjects.localMark.Radius = markerScale * 3
+        radarObjects.localMarkStroke.Radius = markerScale * 3 
     end
 end
 
@@ -706,7 +794,7 @@ local function setRadarPosition(newPosition)
     end
 end
 
---- Input and drag handling
+--- Input and drag handling ---
 do
     local radarDragging = false
     local radarHovering = false
@@ -741,7 +829,7 @@ do
                 zoomText.Position = radarPosition + newV2(0, RADAR_RADIUS + 25)
                 drawingTween(zoomText, 'Transparency', 1, 0.3)
                 
-                local accel = 0.1
+                local accel = 0.75
                 
                 scriptCns.zoomInCn = runService.Heartbeat:Connect(function(deltaTime) 
                     RADAR_SCALE = math.clamp(RADAR_SCALE + (deltaTime * accel), 0.02, 3)
@@ -757,7 +845,7 @@ do
                 zoomText.Position = radarPosition + newV2(0, RADAR_RADIUS + 25)
                 drawingTween(zoomText, 'Transparency', 1, 0.3)
                 
-                local accel = 0.1
+                local accel = 0.75
                 
                 scriptCns.zoomOutCn = runService.Heartbeat:Connect(function(deltaTime) 
                     RADAR_SCALE = math.clamp(RADAR_SCALE - (deltaTime * accel), 0.02, 3)
@@ -826,78 +914,129 @@ do
 end
 
 
---- Player marker setup
+--- Player marker setup ---
 local playerMarks = {} do 
     local function initMark(thisPlayer)
         local thisName = thisPlayer.Name 
         local thisManager = playerManagers[thisName]
         
-        local mark
-        local text
         
+        if ( not thisManager ) then -- no char manager for this player yet 
+            for i = 1, 10 do -- wait and check 10 times 
+                thisManager = playerManagers[thisName]
+                if ( thisManager ) then -- if its found then cancel the wait 
+                    break
+                end
+                task.wait(0.5)
+            end 
+            
+            if ( not thisManager ) then -- if there is no manager when the loop ends, return
+                return
+            end
+        end
+        
+        local markers = {} 
+        
+        local markMain
+        local markStroke
+        
+        --- Create markers 
         if ( USE_QUADS ) then 
-            mark = Drawing.new('Quad')
-            mark.Filled = true
-            mark.Thickness = 2
-            mark.Visible = true
-            mark.ZIndex = 302
+            markMain = Drawing.new('Quad')
+            markMain.Filled = true
+            markMain.Thickness = 2
+            markMain.Visible = true
+            markMain.ZIndex = 303
+            
+            markStroke = Drawing.new('Quad')
+            markStroke.Filled = false
+            markStroke.Thickness = 2
+            markStroke.Transparency = 0
+            markStroke.ZIndex = 302
         else
-            mark = Drawing.new('Circle')
-            mark.Filled = true
-            mark.NumSides = 20
-            mark.Radius = 3 * markerScale
-            mark.Thickness = 2
-            mark.Visible = true
-            mark.ZIndex = 302
+            markMain = Drawing.new('Circle')
+            markMain.Filled = true
+            markMain.NumSides = 20
+            markMain.Radius = markerScale * 3
+            markMain.Thickness = 2
+            markMain.Visible = true
+            markMain.ZIndex = 303
+            
+            markStroke = Drawing.new('Circle')
+            markStroke.Filled = false
+            markStroke.NumSides = 20
+            markStroke.Radius = markerScale * 3
+            markStroke.Thickness = 1
+            markStroke.Visible = true
+            markStroke.ZIndex = 302
         end
         
-        text = Drawing.new('Text')
-        text.Center = true
-        text.Color = Color3.fromRGB(255, 255, 255)
-        text.Font = Drawing.Fonts.UI
-        text.Outline = true
-        text.Size = 15
-        text.Text = thisPlayer.DisplayName or thisName
-        text.Visible = false
-        text.ZIndex = 305
+        --- Register drawing objects
+        table.insert(drawObjects, markMain)
+        table.insert(drawObjects, markStroke)
         
-        if ( DISPLAY_TEAM_COLORS ) then
-            mark.Color = thisManager.Player.TeamColor.Color
-        else
-            mark.Color = RADAR_THEME.Generic_Marker
-        end
-        
-        table.insert(drawObjects, mark)
-        table.insert(drawObjects, text)
-        
-        playerMarks[thisName] = mark
-        
+        --- Setup callbacks
         thisManager.onDeath = function()
-            mark.Filled = false
+            markMain.Filled = false
         end
         thisManager.onRespawn = function()
-            mark.Filled = true
+            markMain.Filled = true
+            
+            markMain.Visible = true
+            markStroke.Visible = true 
+        end
+        thisManager.onRemoval = function()
+            markMain.Visible = false 
+            markStroke.Visible = false
         end
         thisManager.onLeave = function()
-            table.remove(drawObjects, table.find(drawObjects, mark))
-            table.remove(drawObjects, table.find(drawObjects, text))
+            table.remove(drawObjects, table.find(drawObjects, markMain))
+            table.remove(drawObjects, table.find(drawObjects, markStroke))
 
             task.spawn(function() 
-                drawingTween(mark, 'Transparency', 0, 1)
-                task.wait(1.3)
-                mark:Remove()
+                drawingTween(markMain, 'Transparency', 0, 1)
+                drawingTween(markStroke, 'Transparency', 0, 1)
+                task.wait(1.5)
+                markMain:Remove()
+                markStroke:Remove()
             end)
-
-            text:Remove()
             
             playerMarks[thisName] = nil
         end
         
         if ( DISPLAY_TEAM_COLORS ) then 
             thisManager.onTeamChange = function(team) 
-                mark.Color = team.TeamColor.Color
+                if ( DISPLAY_FRIEND_COLORS and thisManager.Friended ) then 
+                    return
+                end
+                
+                local color = thisPlayer.TeamColor.Color
+                markMain.Color = color
+                markStroke.Color = color
             end
+            
+            local color = thisManager.Player.TeamColor.Color 
+            markMain.Color = color
+            markStroke.Color = color
+        else
+            markMain.Color = RADAR_THEME.Generic_Marker
+            markStroke.Color = RADAR_THEME.Generic_Marker
         end
+        
+        if ( DISPLAY_FRIEND_COLORS and thisManager.Friended ) then
+            markStroke.Color = RADAR_THEME.Friend_Marker
+            markMain.Color = RADAR_THEME.Friend_Marker
+        end
+        
+        markers.main = markMain 
+        markers.stroke = markStroke
+        
+        if ( thisManager.Humanoid and thisManager.Humanoid.Health == 0 ) then
+            thisManager.onDeath()
+        end
+        
+        playerMarks[thisName] = markers
+        return markers
     end
     
     for _, manager in pairs(playerManagers) do
@@ -905,7 +1044,7 @@ local playerMarks = {} do
     end
     
     scriptCns.addMarks = playerService.PlayerAdded:Connect(function(player) 
-        task.wait(0.1) -- This will hopefully prevent loading issues
+        task.wait(0.3) -- This will hopefully prevent loading issues
         initMark(player)
     end)
 end
@@ -927,9 +1066,9 @@ do
             if ( (mousePos - radarPosition).Magnitude < RADAR_RADIUS ) then
                 -- Get the closest player and set the hover text to their name 
 
-                local distanceThresh = 900 -- math.huge 🤓🤓🤓🤓🤓🤓🤓
+                local distanceThresh = 100 -- math.huge 🤓🤓🤓🤓🤓🤓🤓
                 hoverPlayer = nil
-
+                
                 for thisName in pairs(playerManagers) do 
                     local thisMark = playerMarks[thisName]
                     -- safety marker check, in case the player hasnt finished loading in 
@@ -937,7 +1076,7 @@ do
                         continue
                     end
                     
-                    local markPos = thisMark[USE_QUADS and 'PointC' or 'Position']
+                    local markPos = thisMark.main[USE_QUADS and 'PointC' or 'Position']
                     local distance = (mousePos - markPos).Magnitude
 
                     if ( distance < distanceThresh ) then
@@ -954,7 +1093,7 @@ do
 end
 
 
---- Main radar loop
+--- Main radar loop ---
 
 -- Coordinate conversion functions
 local function cartToPolar(x, y) 
@@ -975,6 +1114,18 @@ do
     local rad90 = math.rad(90)
     local rad180 = math.rad(180)
     
+    local rayParams
+    if ( VISIBLITY_CHECK ) then
+        rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+        rayParams.FilterDescendantsInstances = { clientPlayer.Character }
+        
+        scriptCns.rayUpdate = clientPlayer.CharacterAdded:Connect(function(newChar) 
+            rayParams.FilterDescendantsInstances = { newChar }
+        end)
+    end
+    
+    
     scriptCns.radarLoop = runService.Heartbeat:Connect(function(deltaTime) 
         -- Safety rootpart check
         if ( not clientRoot ) then 
@@ -982,6 +1133,7 @@ do
         end
 
         local selfPos = clientRoot.Position
+        local cameraPos
         local camAngle = 0 
 
         -- Camera angle
@@ -997,7 +1149,11 @@ do
                 end
                 
                 camAngle = math.atan2(finalLookVec.X, finalLookVec.Z)
+            else
+                camAngle = rad180
             end
+            
+            cameraPos = clientCamera.CFrame.Position 
         end
         
         -- Vertical and horizontal lines
@@ -1035,9 +1191,10 @@ do
         
         -- Centermark
         do
-            local centerMark = radarObjects.centerMark
+            local localMark = radarObjects.localMark
+            local localMarkStroke = radarObjects.localMarkStroke
             if ( USE_QUADS ) then
-                -- For those of you who didn't pay attention in geometry (like me)
+                -- For those of you who didn't pay attention in geometry (like me) this was pretty useful
                 -- https://danceswithcode.net/engineeringnotes/rotations_in_2d/rotations_in_2d.html
                 
                 -- Get player LookVector
@@ -1055,13 +1212,21 @@ do
                 local fixedD = radarPosition + newV2((quadPointD.X * angleSin) - (quadPointD.Y * angleCos), (quadPointD.X * angleCos) + (quadPointD.Y * angleSin))
                 
                 -- Set points
-                centerMark.PointA = fixedA
-                centerMark.PointB = fixedB
-                centerMark.PointC = fixedC
-                centerMark.PointD = fixedD
+                localMark.PointA = fixedA
+                localMark.PointB = fixedB
+                localMark.PointC = fixedC
+                localMark.PointD = fixedD
+                
+                localMarkStroke.PointA = fixedA
+                localMarkStroke.PointB = fixedB 
+                localMarkStroke.PointC = fixedC 
+                localMarkStroke.PointD = fixedD
             else
-                centerMark.Position = radarPosition
-                centerMark.Radius = 3 * markerScale
+                localMark.Position = radarPosition
+                localMark.Radius = markerScale * 3
+                
+                localMarkStroke.Position = radarPosition
+                localMarkStroke.Radius = markerScale * 3
             end
         end
         
@@ -1073,101 +1238,215 @@ do
                 if ( not thisMark ) then
                     continue
                 end
-                                
+                local main, stroke = thisMark.main, thisMark.stroke 
+                
                 -- Team check 
                 if ( DISPLAY_TEAMMATES == false and thisManager.Team == clientTeam ) then
-                    thisMark.Visible = false
+                    thisMark.main.Visible = false
+                    thisMark.stroke.Visible = false 
                     continue
                 end
                 
                 local thisRoot = thisManager.RootPart
-                -- Spawned in / alive check 
+                -- Character check
+                local cframe, position  
                 if ( thisRoot ) then
-                 -- Get this player's position relative to the localplayer position 
-                    local posDelta = thisRoot.Position - selfPos
-                    
-                    local radius, angle = cartToPolar(posDelta.X, posDelta.Z)
-                    local fixedRadius = radius * RADAR_SCALE -- This makes the current zoom affect the marker position 
-                    
-                    if ( fixedRadius > RADAR_RADIUS ) then
-                        if ( DISPLAY_OFFSCREEN ) then 
-                            thisMark.Transparency = OFFSCREEN_TRANSPARENCY
-                        else
-                            thisMark.Visible = false
-                            continue
-                        end
+                    cframe, position = thisRoot.CFrame, thisRoot.Position
+                elseif ( USE_FALLBACK ) then 
+                    cframe = thisManager.Character:GetPivot()
+                    position = cframe.Position 
+                else
+                    continue 
+                end
+                
+                -- Get this player's position relative to the localplayer position 
+                local posDelta = position - selfPos
+                
+                local radius, angle = cartToPolar(posDelta.X, posDelta.Z)
+                local fixedRadius = radius * RADAR_SCALE -- This makes the current zoom affect the marker position 
+                
+                -- Radius clamping 
+                if ( fixedRadius > RADAR_RADIUS ) then
+                    if ( DISPLAY_OFFSCREEN ) then 
+                        main.Transparency = OFFSCREEN_TRANSPARENCY
+                        stroke.Transparency = OFFSCREEN_TRANSPARENCY
                     else
-                        thisMark.Visible = true
-                        thisMark.Transparency = 1
+                        main.Visible = false
+                        stroke.Visible = false 
+                        continue
+                    end
+                else
+                    main.Visible = true
+                    stroke.Visible = true 
+                    
+                    main.Transparency = 1
+                    stroke.Transparency = 1 
+                end
+                
+                radius = math.clamp(fixedRadius, 0, RADAR_RADIUS)
+                angle += (camAngle + rad180) -- 180 degrees needs to be added to align things properly (there's probably a good reason but idk why)
+                 
+                local x, y = polarToCart(radius, angle)
+                local finalPos = radarPosition + newV2(x, y)
+                
+                -- Marker positioning 
+                if ( USE_QUADS ) then
+                    -- Get player LookVector
+                    local playerLookVec = cframe.LookVector
+                    -- Convert it to an angle using atan2 and subtract the camera angle
+                    local angle = (math.atan2(playerLookVec.X, playerLookVec.Z)) - rad90 - camAngle
+                    
+                    local angleCos = mathCos(angle)
+                    local angleSin = mathSin(angle)
+                    
+                    -- Rotate quad points by angle using the sin and cosine calculated above
+                    local fixedA = newV2((quadPointA.X * angleSin) - (quadPointA.Y * angleCos), (quadPointA.X * angleCos) + (quadPointA.Y * angleSin))
+                    local fixedB = newV2((quadPointB.X * angleSin) - (quadPointB.Y * angleCos), (quadPointB.X * angleCos) + (quadPointB.Y * angleSin))                
+                    local fixedC = newV2((quadPointC.X * angleSin) - (quadPointC.Y * angleCos), (quadPointC.X * angleCos) + (quadPointC.Y * angleSin))  
+                    local fixedD = newV2((quadPointD.X * angleSin) - (quadPointD.Y * angleCos), (quadPointD.X * angleCos) + (quadPointD.Y * angleSin))  
+                    if ( MARKER_FALLOFF ) then
+                        local distance = posDelta.Magnitude
+                        local scaleFalloff = math.clamp(MARKER_FALLOFF_AMNT / distance, 0.75, 1)
+                        
+                        fixedA *= scaleFalloff
+                        fixedB *= scaleFalloff
+                        fixedC *= scaleFalloff
+                        fixedD *= scaleFalloff
+                    end
+                    fixedA += finalPos
+                    fixedB += finalPos
+                    fixedC += finalPos
+                    fixedD += finalPos
+                    -- Set points
+                    
+                    main.PointA = fixedA
+                    main.PointB = fixedB
+                    main.PointC = fixedC
+                    main.PointD = fixedD
+                    
+                    stroke.PointA = fixedA
+                    stroke.PointB = fixedB
+                    stroke.PointC = fixedC
+                    stroke.PointD = fixedD
+                else
+                    local main, stroke = thisMark.main, thisMark.stroke 
+                    
+                    local dotRadius = markerScale * 3
+                    
+                    if ( MARKER_FALLOFF ) then
+                        local distance = posDelta.Magnitude
+                        local scaleFalloff = math.clamp(MARKER_FALLOFF_AMNT / distance, 0.75, 1)
+                        dotRadius *= scaleFalloff
                     end
                     
-                    radius = math.clamp(fixedRadius, 0, RADAR_RADIUS)
-                    angle += (camAngle + rad180) -- 180 degrees needs to be added to align things properly (there's probably a good reason but idk why)
+                    main.Radius = dotRadius
+                    main.Position = finalPos
                     
-                    local x, y = polarToCart(radius, angle)
-                    local finalPos = radarPosition + newV2(x, y)
+                    stroke.Radius = dotRadius
+                    stroke.Position = finalPos
+                end
+                
+                -- Hovertext display 
+                if ( hoverPlayer == thisName ) then
+                    local text = radarObjects.hoverText 
+                    text.Text = string.format('%s\n(%d studs away)', thisManager.DisplayName, posDelta.Magnitude)
+                    text.Size = math.clamp(16 * RADAR_SCALE, 16, 24)
+                    text.Visible = true
                     
-                    if ( USE_QUADS ) then
-                        -- Get player LookVector
-                        local playerLookVec = thisRoot.CFrame.LookVector
-                        -- Convert it to an angle using atan2 and subtract the camera angle
-                        local angle = (math.atan2(playerLookVec.X, playerLookVec.Z)) - rad90 - camAngle
+                    local textPosition = finalPos + textOffset
+                    text.Position = text.Position:Lerp(textPosition, 1 - mathExp(-30 * deltaTime))
+                end
+                
+                
+                -- Test for visibility
+                if ( VISIBLITY_CHECK ) then
+                    local direction = ( position - cameraPos ).Unit * 12345
+                    local raycast = workspace:Raycast(cameraPos, direction, rayParams)
+                    
+                    if ( raycast ) then
                         
-                        local angleCos = mathCos(angle)
-                        local angleSin = mathSin(angle)
-                        
-                        -- Rotate quad points by angle using the sin and cosine calculated above
-                        local fixedA = newV2((quadPointA.X * angleSin) - (quadPointA.Y * angleCos), (quadPointA.X * angleCos) + (quadPointA.Y * angleSin))
-                        local fixedB = newV2((quadPointB.X * angleSin) - (quadPointB.Y * angleCos), (quadPointB.X * angleCos) + (quadPointB.Y * angleSin))                
-                        local fixedC = newV2((quadPointC.X * angleSin) - (quadPointC.Y * angleCos), (quadPointC.X * angleCos) + (quadPointC.Y * angleSin))  
-                        local fixedD = newV2((quadPointD.X * angleSin) - (quadPointD.Y * angleCos), (quadPointD.X * angleCos) + (quadPointD.Y * angleSin))  
-
-                        if ( MARKER_FALLOFF ) then
-                            local distance = posDelta.Magnitude
-                            local scaleFalloff = math.clamp(MARKER_FALLOFF_AMNT / distance, 0.5, 1)
-                            fixedA *= scaleFalloff
-                            fixedB *= scaleFalloff
-                            fixedC *= scaleFalloff
-                            fixedD *= scaleFalloff
+                        if ( ( raycast.Position - position ).Magnitude > 4 ) then
+                            main.Transparency /= 5
+                            stroke.Transparency /= 5
                         end
-
-                        fixedA += finalPos
-                        fixedB += finalPos
-                        fixedC += finalPos
-                        fixedD += finalPos
-
-
-                        -- Set points
-                        thisMark.PointA = fixedA
-                        thisMark.PointB = fixedB
-                        thisMark.PointC = fixedC
-                        thisMark.PointD = fixedD
+                        
                     else
-                        thisMark.Position = finalPos
-                        local dotRadius = 3 * markerScale
-                        
-                        if ( MARKER_FALLOFF ) then
-                            local distance = posDelta.Magnitude
-                            local scaleFalloff = math.clamp(MARKER_FALLOFF_AMNT / distance, 0.5, 1)
-                            dotRadius *= scaleFalloff
-                        end
+                        main.Transparency /= 5
+                        stroke.Transparency /= 5
+                    end 
+                end
+            end
+        end
+    end)
+    
+    if ( RGB_MODE ) then
+        local hue = 0
+        
+        scriptCns.rgbLoop = runService.Heartbeat:Connect(function(deltaTime) 
+            hue += deltaTime / 20
+            if ( hue > 1 ) then
+                hue -= 1 
+            end
+            
+            local color = Color3.fromHSV(hue, 0.9, 0.9)
+            
+            for thisName, thisManager in pairs(playerManagers) do 
+                local thisMark = playerMarks[thisName]
+                
+                if ( not thisMark ) then
+                    continue
+                end
+                
+                if ( DISPLAY_FRIEND_COLORS and thisManager.Friended ) then 
+                    continue
+                end
+            
+                thisMark.main.Color = color
+                thisMark.stroke.Color = color 
+            end
+        end)
+    end
+end
 
-                        thisMark.Radius = dotRadius
-                    end
-
-                    if ( hoverPlayer == thisName ) then
-                        local text = radarObjects.hoverText 
-                        text.Position = finalPos + textOffset
-                        text.Text = string.format('%s\n(%d studs away)', thisManager.DisplayName, posDelta.Magnitude)
-                        text.Size = math.clamp(16 * RADAR_SCALE, 16, 24)
-                        text.Visible = true
-                    end
+--- Setup friend handling ---
+do
+    scriptCns.pm_friendAdd = starterGui:GetCore('PlayerFriendedEvent').Event:Connect(function(player)
+        local name = player.Name
+        local mark = playerMarks[name]
+        local manager = playerManagers[name]
+        
+        if ( manager ) then -- funky safety check since this event is finnicky 
+            manager.Friended = true 
+            
+            if ( mark and DISPLAY_FRIEND_COLORS ) then
+                local mark = mark
+                mark.main.Color = RADAR_THEME.Friend_Marker
+                mark.stroke.Color = RADAR_THEME.Friend_Marker 
+            end
+        end
+    end)
+    
+    scriptCns.pm_friendRemove = starterGui:GetCore('PlayerUnfriendedEvent').Event:Connect(function(player)
+        local name = player.Name
+        local mark = playerMarks[name]
+        local manager = playerManagers[name]
+        
+        if ( manager ) then -- funky safety check since this event is finicky 
+            manager.Friended = false 
+            
+            if ( mark and DISPLAY_FRIEND_COLORS ) then
+                if ( DISPLAY_TEAM_COLORS ) then 
+                    local color = player.TeamColor.Color
+                    mark.main.Color = color
+                    mark.stroke.Color = color
+                else
+                    mark.main.Color = RADAR_THEME.Generic_Marker
+                    mark.stroke.Color = RADAR_THEME.Generic_Marker
                 end
             end
         end
     end)
 end
-
 
 -- set _G.RadarKill, so this radar can be killed on re-execution 
 _G.RadarKill = killScript
