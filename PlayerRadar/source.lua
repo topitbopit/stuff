@@ -1,7 +1,13 @@
 --- Drawing Player Radar
 --- Made by topit
 --- Nov 15 2022
-local scriptver = 'v1.3.0'
+local scriptver = 'v1.3.1'
+
+-- v1.3.1 changelog
+--* May have fixed some friend stuff
+--* Rewrote a bunch of setting descriptions
+--* Rewrote a bunch of team color logic, now the Team_Marker entry works
+--+ Added "USE_TEAM_COLORS" setting, if this is enabled then players' marker colors are set to their team
 
 -- v1.3.0 changelog
 --! Changed how scaling works a bit, you may need to re-config your old values!
@@ -11,8 +17,9 @@ local scriptver = 'v1.3.0'
 --* May have fixed some possible issues with the dot display
 --* Renamed "MARKER_SCALEMIN" and "MARKER_SCALEMAX" to "MARKER_SCALE_MIN" and "MARKER_SCALE_MAX"
 --+ Added the "Friend_Marker" theme entry 
+--+ Added the "Team_Marker" theme entry 
 --+ Added the "DISPLAY_FRIEND_COLORS" setting - self explanatory
---+ Added the "RGB_MODE" setting - self explanatory
+--+ Added the "DISPLAY_RGB_COLORS" setting - self explanatory
 --+ Added the "USE_FALLBACK" setting, which lets the radar work on streamingenabled games
 --+ Added the "VISIBLITY_CHECK" setting, which makes non-visible (i.e. players behind walls) markers become dimmed
 --+ Adding / removing a friend now changes their marker color in real time  
@@ -59,14 +66,15 @@ local settings = {
     SMOOTH_ROT = true; -- Toggles smooth radar rotation
     SMOOTH_ROT_AMNT = 30; -- Lower number is smoother, higher number is snappier 
     -- misc
-    CARDINAL_DISPLAY = true; -- Displays each cardinal direction (NSWE) around the radar 
+    CARDINAL_DISPLAY = true; -- Displays the four cardinal directions (north east south west) around the radar
     
     --- Marker settings
     -- display 
-    DISPLAY_OFFSCREEN = true; -- Leaves offscreen markers visible
-    DISPLAY_TEAMMATES = true; -- Shows your teammates' markers
-    DISPLAY_TEAM_COLORS = false; -- Sets the radar markers' color to their player's team color
-    DISPLAY_FRIEND_COLORS = true; -- Sets your friends' markers' color to the set friend color - overwrites team colors 
+    DISPLAY_OFFSCREEN = true; -- Displays offscreen / off-radar markers
+    DISPLAY_TEAMMATES = true; -- Displays markers that belong to your teammates
+    DISPLAY_TEAM_COLORS = true; -- Displays your teammates markers with either a custom color (change Team_Marker) or with that teams TeamColor (enable USE_TEAM_COLORS) 
+    DISPLAY_FRIEND_COLORS = true; -- Displays your friends markers with a custom color (Friend_Marker). This takes priority over DISPLAY_TEAM_COLORS and DISPLAY_RGB
+    DISPLAY_RGB_COLORS = false; -- Displays each marker with an RGB cycle. Takes priority over DISPLAY_TEAM_COLORS, but not DISPLAY_FRIEND_COLORS
     -- scale 
     MARKER_SCALE_BASE = 1.25; -- Base scale that gets applied to markers
     MARKER_SCALE_MAX = 1.25; -- The largest scale that a marker can be.
@@ -78,8 +86,8 @@ local settings = {
     OFFSCREEN_TRANSPARENCY = 0.3; -- Transparency of offscreen markers
     USE_FALLBACK = false; -- Enables an emergency "fallback mode" for StreamingEnabled games
     USE_QUADS = true; -- Displays radar markers as arrows instead of dots 
+    USE_TEAM_COLORS = false; -- Uses a team's TeamColor for marker colors
     VISIBLITY_CHECK = false; -- Makes markers that are not visible slightly transparent 
-    RGB_MODE = false; -- Uses an RGB mode that ignores team colors. If DISPLAY_FRIEND_COLORS is enabled, they take priority over RGB.
     
     --- Theme
     RADAR_THEME = {
@@ -127,21 +135,22 @@ local DISPLAY_OFFSCREEN = settings.DISPLAY_OFFSCREEN
 local DISPLAY_TEAMMATES = settings.DISPLAY_TEAMMATES
 local DISPLAY_TEAM_COLORS = settings.DISPLAY_TEAM_COLORS
 local DISPLAY_FRIEND_COLORS = settings.DISPLAY_FRIEND_COLORS
--- scale
+local DISPLAY_RGB_COLORS = settings.DISPLAY_RGB_COLORS
+-- scale 
 local MARKER_SCALE_BASE = settings.MARKER_SCALE_BASE
 local MARKER_SCALE_MAX = settings.MARKER_SCALE_MAX
 local MARKER_SCALE_MIN = settings.MARKER_SCALE_MIN
--- falloff
+-- falloff 
 local MARKER_FALLOFF = settings.MARKER_FALLOFF
 local MARKER_FALLOFF_AMNT = settings.MARKER_FALLOFF_AMNT
 -- misc 
 local OFFSCREEN_TRANSPARENCY = settings.OFFSCREEN_TRANSPARENCY
-local RGB_MODE = settings.RGB_MODE
 local USE_FALLBACK = settings.USE_FALLBACK
 local USE_QUADS = settings.USE_QUADS
+local USE_TEAM_COLORS = settings.USE_TEAM_COLORS
 local VISIBLITY_CHECK = settings.VISIBLITY_CHECK
 
-if ( RGB_MODE and DISPLAY_TEAM_COLORS ) then
+if ( DISPLAY_RGB_COLORS and DISPLAY_TEAM_COLORS ) then
     DISPLAY_TEAM_COLORS = false 
 end
     
@@ -1010,23 +1019,39 @@ local playerMarks = {} do
                     return
                 end
                 
-                local color = thisPlayer.TeamColor.Color
+                local color 
+                if ( USE_TEAM_COLORS ) then
+                    color = thisPlayer.TeamColor.Color
+                elseif ( team == clientTeam ) then
+                    color = RADAR_THEME.Team_Marker
+                else
+                    color = RADAR_THEME.Generic_Marker
+                end
+                
                 markMain.Color = color
                 markStroke.Color = color
             end
-            
-            local color = thisManager.Player.TeamColor.Color 
-            markMain.Color = color
-            markStroke.Color = color
+        end 
+        
+        local color 
+        
+        -- friend check 
+        if ( DISPLAY_FRIEND_COLORS and thisManager.Friended ) then -- friend colors take first priority
+            color = RADAR_THEME.Friend_Marker
+        elseif ( DISPLAY_TEAM_COLORS ) then  
+            if ( USE_TEAM_COLORS ) then
+                color = thisPlayer.TeamColor.Color
+            elseif ( thisPlayer.Team == clientTeam ) then
+                color = RADAR_THEME.Team_Marker
+            else
+                color = RADAR_THEME.Generic_Marker
+            end
         else
-            markMain.Color = RADAR_THEME.Generic_Marker
-            markStroke.Color = RADAR_THEME.Generic_Marker
+            color = RADAR_THEME.Generic_Marker
         end
         
-        if ( DISPLAY_FRIEND_COLORS and thisManager.Friended ) then
-            markStroke.Color = RADAR_THEME.Friend_Marker
-            markMain.Color = RADAR_THEME.Friend_Marker
-        end
+        markMain.Color = color 
+        markStroke.Color = color 
         
         markers.main = markMain 
         markers.stroke = markStroke
@@ -1241,10 +1266,12 @@ do
                 local main, stroke = thisMark.main, thisMark.stroke 
                 
                 -- Team check 
-                if ( DISPLAY_TEAMMATES == false and thisManager.Team == clientTeam ) then
-                    thisMark.main.Visible = false
-                    thisMark.stroke.Visible = false 
-                    continue
+                if ( DISPLAY_TEAMMATES == false and thisManager.Team == clientTeam ) then 
+                    if ( DISPLAY_TEAMMATES == false ) then
+                        thisMark.main.Visible = false
+                        thisMark.stroke.Visible = false 
+                        continue
+                    end
                 end
                 
                 local thisRoot = thisManager.RootPart
@@ -1379,7 +1406,7 @@ do
         end
     end)
     
-    if ( RGB_MODE ) then
+    if ( DISPLAY_RGB_COLORS ) then
         local hue = 0
         
         scriptCns.rgbLoop = runService.Heartbeat:Connect(function(deltaTime) 
@@ -1434,15 +1461,23 @@ do
         if ( manager ) then -- funky safety check since this event is finicky 
             manager.Friended = false 
             
-            if ( mark and DISPLAY_FRIEND_COLORS ) then
-                if ( DISPLAY_TEAM_COLORS ) then 
-                    local color = player.TeamColor.Color
-                    mark.main.Color = color
-                    mark.stroke.Color = color
+            if ( mark ) then 
+                local color
+                
+                if ( DISPLAY_TEAM_COLORS ) then  
+                    if ( USE_TEAM_COLORS ) then
+                        color = player.TeamColor.Color
+                    elseif ( player.Team == clientTeam ) then
+                        color = RADAR_THEME.Team_Marker
+                    else
+                        color = RADAR_THEME.Generic_Marker
+                    end
                 else
-                    mark.main.Color = RADAR_THEME.Generic_Marker
-                    mark.stroke.Color = RADAR_THEME.Generic_Marker
+                    color = RADAR_THEME.Generic_Marker
                 end
+                
+                mark.main.Color = color
+                mark.stroke.Color = color
             end
         end
     end)
