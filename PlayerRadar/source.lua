@@ -1,7 +1,17 @@
 --- Drawing Player Radar
 --- Made by topit
---- Nov 15 2022
-local scriptver = 'v1.3.1'
+--- Nov 28 2022
+local scriptver = 'v1.3.2'
+
+-- v1.3.2 changelog
+--* Dragging the radar now moves the hovertext properly
+--* Fixed USE_FALLBACK erroring if a player has no character
+--+ Added Trident Survival to the unsupported games list
+--+ Added a few "support warnings" for specific games that mess with the radar
+--+ Added more error handling in case a game tries some fucky shit
+--+ Auto-exec might possibly could be a slight bit more stable
+--+ Changed a tiny bit of player manager stuff, it might be rewritten for better plugin interfacing
+--+ Radar now has a loading message incase you aren't spawned in on execution
 
 -- v1.3.1 changelog
 --* May have fixed some friend stuff
@@ -51,6 +61,10 @@ if ( _G.RadarKill ) then
     _G.RadarKill()
 end
 
+if ( not game:IsLoaded() ) then
+    game.Loaded:Wait()
+end
+
 --- Settings ---
 local existingSettings = _G.RadarSettings or {}
 local settings = {
@@ -77,8 +91,8 @@ local settings = {
     DISPLAY_RGB_COLORS = false; -- Displays each marker with an RGB cycle. Takes priority over DISPLAY_TEAM_COLORS, but not DISPLAY_FRIEND_COLORS
     -- scale 
     MARKER_SCALE_BASE = 1.25; -- Base scale that gets applied to markers
-    MARKER_SCALE_MAX = 1.25; -- The largest scale that a marker can be.
-    MARKER_SCALE_MIN = 0.75; -- The smallest scale that a marker can be.
+    MARKER_SCALE_MAX = 1.25; -- The biggest size that a marker can be
+    MARKER_SCALE_MIN = 0.75; -- The smallest size that a marker can be
     -- falloff 
     MARKER_FALLOFF = true; -- Affects the markers' scale depending on how far away the player is - bypasses SCALE_MIN and SCALE_MAX
     MARKER_FALLOFF_AMNT = 125; -- How close someone has to be for falloff to start affecting them 
@@ -103,7 +117,7 @@ local settings = {
         -- markers
         Generic_Marker = Color3.fromRGB(255, 25, 115); -- Color of a player marker without a team
         Local_Marker = Color3.fromRGB(115, 25, 255); -- Color of your marker, regardless of team
-        Team_Marker = Color3.fromRGB(25, 115, 255); -- Color of your teammates markers. Used when DISPLAY_TEAM_COLORS is disabled
+        Team_Marker = Color3.fromRGB(25, 115, 255); -- Color of your teammates markers. Used when USE_TEAM_COLORS is disabled
         Friend_Marker = Color3.fromRGB(25, 255, 115); -- Color of your friends markers. Used when DISPLAY_FRIEND_COLORS is enabled 
     };
 }
@@ -153,7 +167,6 @@ local VISIBLITY_CHECK = settings.VISIBLITY_CHECK
 if ( DISPLAY_RGB_COLORS and DISPLAY_TEAM_COLORS ) then
     DISPLAY_TEAM_COLORS = false 
 end
-    
 
 --- Theme 
 local RADAR_THEME = settings.RADAR_THEME 
@@ -172,8 +185,9 @@ local mathSin = math.sin
 local mathCos = math.cos
 local mathExp = math.exp
 
---- Script connections ---
+--- Important tables ---
 local scriptCns = {}
+local radarObjects = {}
 
 --- Other variables
 local markerScale = math.clamp(RADAR_SCALE, MARKER_SCALE_MIN, MARKER_SCALE_MAX) * MARKER_SCALE_BASE
@@ -198,9 +212,8 @@ local function newDrawObj(objectClass, objectProperties) -- this method is cring
     return obj
 end
 
-
 -- Drawing tween function 
-local drawingTween do -- obj property dest time 
+local tweenExp, tweenQuad do -- obj property dest time 
     local function numLerp(a, b, c) -- skidded from wikipedia (😱😱)
         return (1 - c) * a + c * b
     end
@@ -210,8 +223,9 @@ local drawingTween do -- obj property dest time
     tweenTypes.number = numLerp
     tweenTypes.Color3 = Color3.new().Lerp
     
+    -- https://easings.net is useful for easing funcs
     
-    function drawingTween(obj, property, dest, duration) 
+    function tweenExp(obj, property, dest, duration) 
         task.spawn(function()
             local initialVal = obj[property]
             local tweenTime = 0
@@ -228,20 +242,56 @@ local drawingTween do -- obj property dest time
             obj[property] = dest
         end)
     end
+    
+    function tweenQuad(obj, property, dest, duration, func) 
+        task.spawn(function()
+            local initialVal = obj[property]
+            local tweenTime = 0
+            local lerpFunc = tweenTypes[typeof(dest)]
+            
+            while ( tweenTime < duration ) do 
+                obj[property] = lerpFunc(initialVal, dest, 1 - (1 - tweenTime / duration) * (1 - tweenTime / duration))
+                if ( func ) then
+                    func(obj[property]) 
+                end
+                
+                local deltaTime = task.wait()
+                tweenTime += deltaTime
+            end
+
+            obj[property] = dest
+        end)
+    end
 end
 
 --- Local object manager --- 
+local errMessage = 'Failed to get the %s instance. Your game may be unsupported, or simply has not finished loading.'
+
 local clientPlayer = playerService.LocalPlayer
-local clientRoot, clientHumanoid do 
+
+if ( not clientPlayer ) then
+    for _, con in pairs(scriptCns) do 
+        con:Disconnect() 
+    end
     
+    return messagebox(string.format(errMessage, 'LocalPlayer'), 'Player Radar', 0)
+end
+
+local clientRoot do 
     scriptCns.charRespawn = clientPlayer.CharacterAdded:Connect(function(newChar) 
         clientRoot = newChar:WaitForChild('HumanoidRootPart')
-        clientHumanoid = newChar:WaitForChild('Humanoid')
+        
+        if ( clientRoot ) then
+            radarObjects.loadText.Visible = false 
+            radarObjects.loadOverlay.Visible = false  
+        else
+            radarObjects.loadText.Visible = true 
+            radarObjects.loadOverlay.Visible = true  
+        end
     end)
     
     if ( clientPlayer.Character ) then 
         clientRoot = clientPlayer.Character:FindFirstChild('HumanoidRootPart')
-        clientHumanoid = clientPlayer.Character:FindFirstChild('Humanoid')
     end
 end
 
@@ -251,6 +301,14 @@ local clientCamera do
     end)
 
     clientCamera = workspace.CurrentCamera or workspace:FindFirstChildOfClass('Camera')
+end
+
+if ( not clientCamera ) then -- tested this out, deleting the camera instantly makes a new one but who cares
+    for _, con in pairs(scriptCns) do 
+        con:Disconnect() 
+    end
+    
+    return messagebox(string.format(errMessage, 'Camera'), 'Player Radar', 0)
 end
 
 local clientTeam do 
@@ -263,66 +321,75 @@ end
 
 --- PlaceID Check --- 
 do
-    local id = game.PlaceId
-    if ( id == 292439477 or id == 3233893879 ) then
-        local notif = Drawing.new('Text')
-        notif.Center = true
-        notif.Color = Color3.fromRGB(255, 255, 255)
-        notif.Font = Drawing.Fonts.UI
-        notif.Outline = true
-        notif.Position = newV2(clientCamera.ViewportSize.X / 2, 200)
-        notif.Size = 30
+    local thisId = game.PlaceId
+    local retardedGames = {
+        292439477;   -- Phantom forces - support might be added
+        3233893879;  -- Bad business
+        8130299583;  -- Trident survival (server browser?) - support might be added
+        9570110925;  -- Trident survival (server) - support might be added
+    }
+    local gameNotes = {
+        [379614936] = 'This game is known to fuck up the radar - waiting a round should fix'; -- Assassins
+        [2474168535] = 'Players that are lassoed don\'t appear on the radar properly'; -- Westbound 
+    }
+    
+    local halfWidth = clientCamera.ViewportSize.X / 2
+    
+    local notif = Drawing.new('Text')
+    notif.Center = true
+    notif.Color = Color3.fromRGB(255, 255, 255)
+    notif.Font = Drawing.Fonts.UI
+    notif.Outline = true
+    notif.Position = newV2(halfWidth, 200)
+    notif.Size = 22
+    notif.Transparency = 0 
+    notif.Visible = true 
+    notif.ZIndex = 500 
+    
+    if ( table.find(retardedGames, thisId) ) then
         notif.Text = 'Games with custom character systems\naren\'t supported. Sorry!'
-        notif.Transparency = 0
-        notif.Visible = true
-        notif.ZIndex = 50
         
-        drawingTween(notif, 'Transparency', 1, 0.25)
-        drawingTween(notif, 'Position', newV2(clientCamera.ViewportSize.X / 2, 150), 0.25)
+        tweenExp(notif, 'Transparency', 1, 0.25)
+        tweenExp(notif, 'Position', newV2(halfWidth, 150), 0.25)
         task.wait(5)
         
-        drawingTween(notif, 'Position', newV2(clientCamera.ViewportSize.X / 2, 200), 0.25)
-        drawingTween(notif, 'Transparency', 0, 0.25)
-        task.wait(3)
+        tweenExp(notif, 'Position', newV2(halfWidth, 200), 0.25)
+        tweenExp(notif, 'Transparency', 0, 0.25)
+        task.wait(0.5)
         
         for _, con in pairs(scriptCns) do 
             con:Disconnect()
         end
+        
         notif:Remove()
         return
     else
-        -- might as well place control notification here 
-        local notif = Drawing.new('Text')
-        notif.Center = true
-        notif.Color = Color3.fromRGB(255, 255, 255)
-        notif.Font = Drawing.Fonts.UI
-        notif.Outline = true
-        notif.Position = newV2(clientCamera.ViewportSize.X / 2, 200)
-        notif.Size = 22
+        -- might as well place loaded notification here 
         notif.Text = ('Loaded Drawing Radar %s\n\nControls:\n[-]: zoom out     [+]: zoom in     [End]: exit script'):format(scriptver) -- [Home]: toggle radar 
-        notif.Transparency = 0
-        notif.Visible = true
-        notif.ZIndex = 500
-
+        
+        local gameWarning = gameNotes[thisId]
+        
+        if ( gameWarning ) then 
+            notif.Text = notif.Text .. string.format('\n\nGame warning: %s', gameWarning) -- fuck fluxus for not having ..= support 
+        end
+        
         task.spawn(function()
-            task.wait(0.5)
+            tweenExp(notif, 'Transparency', 1, 0.25)
+            tweenExp(notif, 'Position', newV2(halfWidth, 150), 0.25)
+            task.wait(gameWarning and 10 or 5)
             
-            drawingTween(notif, 'Transparency', 1, 0.25)
-            drawingTween(notif, 'Position', newV2(clientCamera.ViewportSize.X / 2, 150), 0.25)
-            task.wait(5)
-            
-            drawingTween(notif, 'Position', newV2(clientCamera.ViewportSize.X / 2, 200), 0.25)
-            drawingTween(notif, 'Transparency', 0, 0.25)
+            tweenExp(notif, 'Position', newV2(halfWidth, 200), 0.25)
+            tweenExp(notif, 'Transparency', 0, 0.25)
             task.wait(0.5)
             
             if ( workspace.StreamingEnabled ) then
-                notif.Text = 'It looks like this game uses StreamingEnabled, which messes with the radar.\nFallback mode is now enabled.'
-                drawingTween(notif, 'Transparency', 1, 0.25)
-                drawingTween(notif, 'Position', newV2(clientCamera.ViewportSize.X / 2, 150), 0.25)
+                notif.Text = 'It looks like this game uses StreamingEnabled - Fallback mode is now enabled.'
+                tweenExp(notif, 'Transparency', 1, 0.25)
+                tweenExp(notif, 'Position', newV2(halfWidth, 150), 0.25)
                 task.wait(5)
                 
-                drawingTween(notif, 'Position', newV2(clientCamera.ViewportSize.X / 2, 200), 0.25)
-                drawingTween(notif, 'Transparency', 0, 0.25)
+                tweenExp(notif, 'Position', newV2(halfWidth, 200), 0.25)
+                tweenExp(notif, 'Transparency', 0, 0.25)
                 task.wait(1)
             end
             
@@ -337,16 +404,35 @@ if ( workspace.StreamingEnabled ) then
 end
 
 local playerManagers = {}
-do 
+if ( game.PlaceId == 292439477 ) then -- Phantom forces support (being developed soon 🤑)
+    local function removePlayer(player) 
+    end
+    
+    local function readyPlayer(thisPlayer) 
+    
+    end
+    
+    -- Setup managers for every existing player 
+    for _, player in ipairs(playerService:GetPlayers()) do
+        if ( player ~= clientPlayer ) then
+            readyPlayer(player)
+        end
+    end
+
+    -- Setup managers for joining players, and clean managers for leaving players
+    scriptCns.pm_playerAdd = playerService.PlayerAdded:Connect(readyPlayer)
+    scriptCns.pm_playerRemove = playerService.PlayerRemoving:Connect(removePlayer)
+else
+    
     local function removePlayer(player) 
         local thisName = player.Name
         local thisManager = playerManagers[thisName]
 
         -- had an error randomly happen where there was no manager made for someone before they were removed
-         -- definitely not getting a 0.000001% chance of some retard joining then leaving a microsecond later
-         -- so now there's this check for some random race condition that happens every 8 billion years 
+        -- definitely not getting a 0.000001% chance of some retard joining then leaving a microsecond later
+        -- so now there's this check for some random race condition that happens every 8 billion years 
         if ( not thisManager ) then
-            return '?????'
+            return
         end
         local thisPlayerCns = thisManager.Cns
                 
@@ -458,6 +544,18 @@ do
         thisManager.Name = thisName 
         thisManager.DisplayName = thisPlayer.DisplayName  
         thisManager.Friended = clientPlayer:IsFriendsWith(thisPlayer.UserId)
+        thisManager.GetCFrame = function() 
+            local thisRoot = thisManager.RootPart
+            local cframe  
+            
+            if ( thisRoot ) then
+                cframe = thisRoot.CFrame
+            elseif ( USE_FALLBACK and thisManager.Character ) then 
+                cframe = thisManager.Character:GetPivot()
+            end
+            
+            return cframe 
+        end
         
         -- Finalize
         thisManager.Cns = thisPlayerCns 
@@ -476,15 +574,11 @@ do
     scriptCns.pm_playerRemove = playerService.PlayerRemoving:Connect(removePlayer)
 end
 
---- Plugin managers --- 
--- The ability to make custom plugins / add-ons for the radar 
--- (to add stuff like npc support) might be developed eventually!
-
 --- Radar UI --- 
 local radarLines = {}
-local radarObjects = {}
 local radarPosition = newV2(300, 250)
 
+-- main radar
 radarObjects.main = newDrawObj('Circle', {
     Color = RADAR_THEME.Background;
     Position = radarPosition; 
@@ -523,6 +617,32 @@ radarObjects.dragHandle = newDrawObj('Circle', {
     ZIndex = 325;
 })
 
+-- spawn overlay
+radarObjects.loadOverlay = newDrawObj('Circle', {
+    Color = Color3.new(0, 0, 0);
+    Filled = true;
+    NumSides = 40;
+    Position = radarPosition; 
+    Radius = RADAR_RADIUS;
+    Transparency = 0.5;
+    Visible = clientRoot == nil;
+    ZIndex = 319;
+})
+
+radarObjects.loadText = newDrawObj('Text', {
+    Center = true;
+    Color = Color3.fromRGB(255, 255, 255);
+    Font = Drawing.Fonts.UI;
+    Outline = true;
+    Position = radarPosition - newV2(0, 15);
+    Size = 20;
+    Text = 'Waiting for you to spawn in...';
+    Transparency = 1;
+    Visible = clientRoot == nil;
+    ZIndex = 320;
+})
+
+-- text
 radarObjects.zoomText = newDrawObj('Text', {
     Center = true;
     Color = Color3.fromRGB(255, 255, 255);
@@ -542,7 +662,7 @@ radarObjects.hoverText = newDrawObj('Text', {
     Position = radarPosition;
     Size = 16;
     Transparency = 1;
-    Visible = true;
+    Visible = false;
     ZIndex = 306;
 })
 
@@ -683,7 +803,7 @@ end
 
 --- Other functions ---
 local destroying = false 
-local function killScript() 
+local function killScript() -- destroys the script; self explanatory
     if ( destroying ) then
         return
     end 
@@ -711,7 +831,7 @@ local function killScript()
     end
     
     for _, obj in ipairs(drawObjects) do 
-        drawingTween(obj, 'Transparency', 0, 0.5)
+        tweenExp(obj, 'Transparency', 0, 0.5)
     end
     
     task.wait(1)
@@ -727,7 +847,7 @@ local function killScript()
     drawObjects = nil
 end
 
-local function setRadarScale()   
+local function setRadarScale() -- updates the radar's scale using RADAR_SCALE 
     markerScale = math.clamp(RADAR_SCALE, MARKER_SCALE_MIN, MARKER_SCALE_MAX) * MARKER_SCALE_BASE
     
     if ( RADAR_LINES ) then
@@ -783,12 +903,15 @@ local function setRadarScale()
     end
 end
 
-local function setRadarPosition(newPosition) 
+local function setRadarPosition(newPosition) -- sets the radar's position to newPosition
     radarPosition = newPosition
         
     radarObjects.main.Position = newPosition
     radarObjects.outline.Position = newPosition
     
+    
+    radarObjects.loadOverlay.Position = newPosition
+    radarObjects.loadText.Position = newPosition - newV2(0, 15)
     
     if ( RADAR_LINES ) then
         for _, line in ipairs(radarLines) do 
@@ -801,6 +924,8 @@ local function setRadarPosition(newPosition)
         radarObjects.verticalLine.From = newPosition - newV2(0, RADAR_RADIUS);
         radarObjects.verticalLine.To = newPosition + newV2(0, RADAR_RADIUS);
     end
+    
+    radarObjects.hoverText.Position = newPosition
 end
 
 --- Input and drag handling ---
@@ -836,12 +961,19 @@ do
                 
                 local zoomText = radarObjects.zoomText
                 zoomText.Position = radarPosition + newV2(0, RADAR_RADIUS + 25)
-                drawingTween(zoomText, 'Transparency', 1, 0.3)
+                tweenExp(zoomText, 'Transparency', 1, 0.3)
                 
                 local accel = 0.75
                 
                 scriptCns.zoomInCn = runService.Heartbeat:Connect(function(deltaTime) 
                     RADAR_SCALE = math.clamp(RADAR_SCALE + (deltaTime * accel), 0.02, 3)
+                    
+                    --[[if ( zoomingIn ) then
+                        accel += deltaTime
+                    else
+                        accel /= 1.5
+                    end]]
+                    
                     accel += deltaTime
                     
                     zoomText.Text = ('Scale: %.2f'):format(RADAR_SCALE)
@@ -852,12 +984,13 @@ do
                 
                 local zoomText = radarObjects.zoomText
                 zoomText.Position = radarPosition + newV2(0, RADAR_RADIUS + 25)
-                drawingTween(zoomText, 'Transparency', 1, 0.3)
+                tweenExp(zoomText, 'Transparency', 1, 0.3)
                 
                 local accel = 0.75
                 
                 scriptCns.zoomOutCn = runService.Heartbeat:Connect(function(deltaTime) 
                     RADAR_SCALE = math.clamp(RADAR_SCALE - (deltaTime * accel), 0.02, 3)
+                    
                     accel += deltaTime
                     
                     zoomText.Text = ('Scale: %.2f'):format(RADAR_SCALE)
@@ -893,19 +1026,25 @@ do
             if ( keyCode == 'Equals' ) then
                 zoomingIn = false 
                 
-                drawingTween(radarObjects.zoomText, 'Transparency', 0, 0.3)
-                
+                if ( zoomingOut == false ) then 
+                    tweenExp(radarObjects.zoomText, 'Transparency', 0, 0.3)
+                end      
+                          
                 local zoomCn = scriptCns.zoomInCn
                 if ( zoomCn and zoomCn.Connected ) then 
+                    -- task.wait(0.3)
                     zoomCn:Disconnect()
                 end
             elseif ( keyCode == 'Minus' ) then
                 zoomingOut = false
                 
-                drawingTween(radarObjects.zoomText, 'Transparency', 0, 0.3)
+                if ( zoomingIn == false ) then 
+                    tweenExp(radarObjects.zoomText, 'Transparency', 0, 0.3)
+                end
                 
                 local zoomCn = scriptCns.zoomOutCn
                 if ( zoomCn and zoomCn.Connected ) then 
+                    -- task.wait(0.3)
                     zoomCn:Disconnect()
                 end
             end
@@ -921,7 +1060,6 @@ do
         end
     end)
 end
-
 
 --- Player marker setup ---
 local playerMarks = {} do 
@@ -939,7 +1077,7 @@ local playerMarks = {} do
                 task.wait(0.5)
             end 
             
-            if ( not thisManager ) then -- if there is no manager when the loop ends, return
+            if ( not thisManager ) then -- if there is no manager when the loop ends, return out
                 return
             end
         end
@@ -1003,8 +1141,8 @@ local playerMarks = {} do
             table.remove(drawObjects, table.find(drawObjects, markStroke))
 
             task.spawn(function() 
-                drawingTween(markMain, 'Transparency', 0, 1)
-                drawingTween(markStroke, 'Transparency', 0, 1)
+                tweenExp(markMain, 'Transparency', 0, 1)
+                tweenExp(markStroke, 'Transparency', 0, 1)
                 task.wait(1.5)
                 markMain:Remove()
                 markStroke:Remove()
@@ -1091,7 +1229,7 @@ do
             if ( (mousePos - radarPosition).Magnitude < RADAR_RADIUS ) then
                 -- Get the closest player and set the hover text to their name 
 
-                local distanceThresh = 100 -- math.huge 🤓🤓🤓🤓🤓🤓🤓
+                local distanceThresh = 50 -- math.huge 🤓🤓🤓🤓🤓🤓🤓
                 hoverPlayer = nil
                 
                 for thisName in pairs(playerManagers) do 
@@ -1101,13 +1239,17 @@ do
                         continue
                     end
                     
-                    local markPos = thisMark.main[USE_QUADS and 'PointC' or 'Position']
+                    local markPos = thisMark.main[USE_QUADS and 'PointD' or 'Position']
                     local distance = (mousePos - markPos).Magnitude
 
                     if ( distance < distanceThresh ) then
                         distanceThresh = distance
                         hoverPlayer = thisName
                     end
+                end
+                
+                if ( hoverPlayer == nil ) then
+                    radarObjects.hoverText.Visible = false  
                 end
             else
                 hoverPlayer = nil
@@ -1116,7 +1258,6 @@ do
         end
     end)
 end
-
 
 --- Main radar loop ---
 
@@ -1149,7 +1290,6 @@ do
             rayParams.FilterDescendantsInstances = { newChar }
         end)
     end
-    
     
     scriptCns.radarLoop = runService.Heartbeat:Connect(function(deltaTime) 
         -- Safety rootpart check
@@ -1274,17 +1414,12 @@ do
                     end
                 end
                 
-                local thisRoot = thisManager.RootPart
                 -- Character check
-                local cframe, position  
-                if ( thisRoot ) then
-                    cframe, position = thisRoot.CFrame, thisRoot.Position
-                elseif ( USE_FALLBACK ) then 
-                    cframe = thisManager.Character:GetPivot()
-                    position = cframe.Position 
-                else
-                    continue 
-                end
+                local cframe = thisManager:GetCFrame()
+                if ( not cframe ) then
+                    continue
+                end 
+                local position = cframe.Position 
                 
                 -- Get this player's position relative to the localplayer position 
                 local posDelta = position - selfPos
@@ -1355,9 +1490,7 @@ do
                     stroke.PointB = fixedB
                     stroke.PointC = fixedC
                     stroke.PointD = fixedD
-                else
-                    local main, stroke = thisMark.main, thisMark.stroke 
-                    
+                else                    
                     local dotRadius = markerScale * 3
                     
                     if ( MARKER_FALLOFF ) then
@@ -1433,6 +1566,18 @@ do
             end
         end)
     end
+    
+    task.delay(10, function() 
+        local lText = radarObjects.loadText
+        if ( lText.Visible ) then 
+            local origText = lText.Text
+            local message = '\n\nIf this menu doesn\'t go away\neven after you spawn, \nyour game is likely \nunsupported '
+            
+            tweenQuad({ Delta = 0 }, 'Delta', #message, 1.5, function(delta) 
+                lText.Text = origText .. message:sub(1, delta)
+            end) -- this is kinda scuffedf but who cares
+        end
+    end)
 end
 
 --- Setup friend handling ---
