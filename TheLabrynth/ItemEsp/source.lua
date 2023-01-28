@@ -40,7 +40,7 @@ local defaultSettings = {
     -- Display settings 
     background_box = true; -- Shows a background box behind each ESP, making it easier to read 
     distance_label = true; -- Shows a label displaying how far away you are from the item
-    rarity_label = true; -- Shows a label displaying the item's rariy
+    rarity_label = true; -- Shows a label displaying the item's rarity
     item_label = true; -- Shows a label displaying the item's name 
 }
 
