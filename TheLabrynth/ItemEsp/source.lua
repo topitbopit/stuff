@@ -26,21 +26,22 @@ end
 --- Handle settings 
 local settings = espInfo.settings or {} 
 local defaultSettings = {
-    -- render settings 
-    max_draw_distance = 6000; -- Stops drawing objects that are further away than this setting 
+    -- Render settings 
+    max_draw_distance = 6000; -- Disables drawing of ESPs that are further away than this setting 
     text_size = 18; -- Size of the esp text
-    distance_scale = false; -- Changes scaling of esp based off of distance 
+    distance_scale = true; -- Changes scaling of esp based off of distance 
     optimized_updating = true; -- Updates only one ESP manager per frame - boosts your fps, but some esp looks even more delayed
     
-    -- script settings 
-    destroy_bind = 'PageDown'; -- Keybind for destroying this script
-    rarity_level = 0; -- Rarity required to esp an item. 1 is common, 2 is uncommon, 3 is rare, etc.
-    item_types = { 'Fish', 'Ores', 'Trees', 'Ingredients' }; -- What types of item to esp. Options are 'Fish', 'Ores', 'Trees', 'Ingredients'
+    -- Script settings 
+    destroy_bind = 'End'; -- Keybind for destroying the script - refer to https://create.roblox.com/docs/reference/engine/enums/KeyCode
+    rarity_level = 3; -- Rarity required to esp an item. 1 is common, 2 is uncommon, 3 is rare, etc.
+    item_types = { 'Fish', 'Ores', 'Trees', 'Ingredients' }; -- What types of item to esp, options are 'Fish', 'Ores', 'Trees', and 'Ingredients'
     
-    background_box = true; -- Shows a background box behind each esp, making it easier to read 
-    distance_label = false; -- Shows a label displaying how far away you are from the item
-    rarity_label = true; -- Shows the label displaying the item's rariy
-    item_label = true; -- Shows the label displaying the item's name 
+    -- Display settings 
+    background_box = true; -- Shows a background box behind each ESP, making it easier to read 
+    distance_label = true; -- Shows a label displaying how far away you are from the item
+    rarity_label = true; -- Shows a label displaying the item's rariy
+    item_label = true; -- Shows a label displaying the item's name 
 }
 
 for k, v in pairs(defaultSettings) do 
