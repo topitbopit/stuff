@@ -1,6 +1,21 @@
 --- Labyrinth Item Esp
 -- Made by topit 
--- Version 1.0.1 // January 28th, 2023
+-- Version 1.1.0 // January 28th, 2023
+
+--[[
+Version v1.1.0
+ * Changed how text scaling works a tiny bit 
+ * Cleaned up some code
+ + Added culled_refresh_rate setting
+ + Added rarity_specific setting
+ + Optimized ESP culling even more - off-screen ESPs get updated at a lower rate (culled_refresh_rate) than on-screen ESPs
+    
+Version v1.0.1
+ * Fixed "Labrynth" typos
+
+Version v1.0.0
+ + Released
+]]
 
 if ( game.PlaceId ~= 534701013 ) then
     messagebox('Wrong game', 'Oopsies', 0)
@@ -26,22 +41,25 @@ end
 --- Handle settings 
 local settings = espInfo.settings or {} 
 local defaultSettings = {
-    -- render settings 
-    max_draw_distance = 6000; -- Stops drawing objects that are further away than this setting 
-    text_size = 18; -- Size of the esp text
-    distance_scale = false; -- Changes scaling of esp based off of distance 
-    optimized_updating = true; -- Updates only one ESP manager per frame - boosts your fps, but some esp looks even more delayed
+    -- Render settings 
+    max_draw_distance = 1000; -- Disables drawing of ESPs that are further away than this setting 
+    text_size = 18; -- Size of the ESP text
+    distance_scale = false; -- Changes scaling of ESP based off of distance 
+    optimized_updating = false; -- Updates only one ESP manager per frame - boosts your fps, but some ESP looks even more delayed
+    culled_refresh_rate = 0.3; -- How long to wait inbetween off-screen ESP updates. In other words, higher number = less lag, but more delay 
     
-    -- script settings 
-    destroy_bind = 'PageDown'; -- Keybind for destroying this script
-    rarity_level = 0; -- Rarity required to esp an item. 1 is common, 2 is uncommon, 3 is rare, etc.
-    item_types = { 'Fish', 'Ores', 'Trees', 'Ingredients' }; -- What types of item to esp. Options are 'Fish', 'Ores', 'Trees', 'Ingredients'
+    -- Script settings 
+    destroy_bind = 'End'; -- Keybind for destroying the script - refer to https://create.roblox.com/docs/reference/engine/enums/KeyCode
+    rarity_level = 4; -- Rarity required to ESP an item. 1 is common, 2 is uncommon, 3 is rare, etc.
+    rarity_specific = false; -- If true, only items with the rarity equal to rarity_level get ESP'd. If false, items equal to and above rarity_level get ESP'd.
+    item_types = { 'Fish', 'Ores', 'Trees', 'Ingredients' }; -- What types of item to ESP. Options are 'Fish', 'Ores', 'Trees', and 'Ingredients'
     
-    background_box = true; -- Shows a background box behind each esp, making it easier to read 
-    distance_label = false; -- Shows a label displaying how far away you are from the item
-    rarity_label = true; -- Shows the label displaying the item's rariy
-    item_label = true; -- Shows the label displaying the item's name 
-}
+    -- Display settings 
+    background_box = true; -- Shows a background box behind each ESP, making it easier to read 
+    distance_label = true; -- Shows a label displaying how far away you are from the item
+    rarity_label = true; -- Shows a label displaying the item's rarity
+    item_label = true; -- Shows a label displaying the item's name 
+};
 
 for k, v in pairs(defaultSettings) do 
     if ( settings[k] ~= nil ) then
@@ -60,24 +78,11 @@ do
         clonedTypes[i] = v 
     end
     
-    local fishIdx = table.find(clonedTypes, 'Fish')
-    if ( fishIdx ) then
-        table.remove(clonedTypes, fishIdx)
-    end
-    
-    local oresIdx = table.find(clonedTypes, 'Ores')
-    if ( oresIdx ) then
-        table.remove(clonedTypes, oresIdx)
-    end
-    
-    local treesIdx = table.find(clonedTypes, 'Trees')
-    if ( treesIdx ) then
-        table.remove(clonedTypes, treesIdx)
-    end
-    
-    local ingrIdx = table.find(clonedTypes, 'Ingredients')
-    if ( ingrIdx ) then
-        table.remove(clonedTypes, ingrIdx)
+    for _, itemType in ipairs({ 'Fish', 'Ores', 'Trees', 'Ingredients' }) do 
+        local itemIdx = table.find(clonedTypes, itemType)
+        if ( itemIdx ) then
+            table.remove(clonedTypes, itemIdx)
+        end
     end
     
     if ( #clonedTypes > 0 ) then
@@ -141,7 +146,7 @@ local itemInfo = {} do
         ['SeaOrb_Ingredient'] = 'Sea_Orb_Plant'; -- this is a guess
         ['LeafyVine_Ingredient'] = 'Leafy_Vine';
         ['DarkShroom_Ingredient'] = 'Dark_Shroom_Plant'; -- this is a guess
-        ['OrnathPlant_Ingredient'] = 'Ornath_Plant';  -- this is a guess
+        ['OrnathPlant_Ingredient'] = 'Ornath_Plant';
     }
     
     for name, info in pairs(itemsModule.Items) do 
@@ -151,9 +156,15 @@ local itemInfo = {} do
             
             local typeStr = info.Information.Type 
             
-            if ( rarityInt < wantedLevel ) then
-                continue
-            end
+            if ( settings.rarity_specific ) then 
+                if ( rarityInt ~= wantedLevel ) then
+                    continue
+                end
+            else
+                if ( rarityInt < wantedLevel ) then
+                    continue
+                end
+            end 
             
             if ( name:match('Log') ) then
                 name = name:gsub('Log', 'Tree')
@@ -222,6 +233,12 @@ local EspObject = {} do
             return false 
         end
         
+        local curTime = tick() 
+        
+        if ( self.culled and ( curTime - self.updateTime ) < settings.culled_refresh_rate ) then
+            return
+        end
+                
         local objects = self.objects 
         
         local parent = self.parent 
@@ -318,6 +335,7 @@ local EspObject = {} do
         end
         
         self.culled = false 
+        self.updateTime = curTime
         
         return self 
     end
@@ -337,6 +355,7 @@ local EspObject = {} do
         local objects = {}
         
         self.culled = false -- set to true when this object is offscreen and not being updated 
+        self.updateTime = 0 -- time when the last update occurred 
         self.manager = manager 
         self.parent = parentObject 
         
