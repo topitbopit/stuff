@@ -573,5 +573,5 @@ function shared.labyrinthEspDestroy()
     mazeManager:Destroy()
     gladeManager:Destroy()
     
-    espInfo.Destroy = nil 
+    shared.labyrinthEspDestroy = nil 
 end
