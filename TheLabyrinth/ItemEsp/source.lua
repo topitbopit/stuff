@@ -1,8 +1,11 @@
 --- Labyrinth Item Esp
 -- Made by topit 
--- Version 1.1.1 // January 28th, 2023
+-- Version 1.1.2 // January 28th, 2023
 
 --[[
+Version v1.1.2
+ * Fixed destroy function not being called / made properly     
+
 Version v1.1.1
  * Fixed text scaling erroring when text_size > 35     
 
@@ -27,14 +30,14 @@ end
 
 --- Setup shared stuff 
 local espInfo = shared.labyrinthEsp
+local destroyFunc = shared.labyrinthEspDestroy
 
-if ( espInfo ) then
-    if ( espInfo.Destroy ) then
-        espInfo.Destroy()
-    end
-else
+if ( not espInfo ) then
     espInfo = {} 
     shared.labyrinthEsp = espInfo
+end
+if ( destroyFunc ) then
+    destroyFunc() 
 end
 
 if ( not game:IsLoaded() ) then
@@ -521,7 +524,7 @@ do
         local keycode = input.KeyCode.Name  
         
         if ( processed == false and keycode == settings.destroy_bind ) then
-            espInfo.Destroy() 
+            shared.labyrinthEspDestroy() 
         end
     end)
     
@@ -562,7 +565,7 @@ else
 end
 
 --- Cleanup function 
-function espInfo.Destroy() 
+function shared.labyrinthEspDestroy() 
     for _, con in pairs(scriptCons) do
         con:Disconnect()
     end
