@@ -1,8 +1,11 @@
 --- Labyrinth Item Esp
 -- Made by topit 
--- Version 1.1.0 // January 28th, 2023
+-- Version 1.1.1 // January 28th, 2023
 
 --[[
+Version v1.1.1
+ * Fixed text scaling erroring when text_size > 35     
+
 Version v1.1.0
  * Changed how text scaling works a tiny bit 
  * Cleaned up some code
@@ -50,7 +53,7 @@ local defaultSettings = {
     
     -- Script settings 
     destroy_bind = 'End'; -- Keybind for destroying the script - refer to https://create.roblox.com/docs/reference/engine/enums/KeyCode
-    rarity_level = 4; -- Rarity required to ESP an item. 1 is common, 2 is uncommon, 3 is rare, etc.
+    rarity_level = 3; -- Rarity required to ESP an item. 1 is common, 2 is uncommon, 3 is rare, etc.
     rarity_specific = false; -- If true, only items with the rarity equal to rarity_level get ESP'd. If false, items equal to and above rarity_level get ESP'd.
     item_types = { 'Fish', 'Ores', 'Trees', 'Ingredients' }; -- What types of item to ESP. Options are 'Fish', 'Ores', 'Trees', and 'Ingredients'
     
@@ -283,7 +286,7 @@ local EspObject = {} do
             local depthScale = 1200 / depth
             local fovScale = 70 / localCamera.FieldOfView
             
-            textSize = math.clamp(depthScale, textSize, 35) * fovScale
+            textSize = math.clamp(depthScale, textSize, textSize + 20) * fovScale
         end
         
         local index = 10000 + ( -depth )
